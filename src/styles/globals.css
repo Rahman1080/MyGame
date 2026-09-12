@@ -1,0 +1,48 @@
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Outfit:wght@400;500;600;700&display=swap");
+
+:root {
+  --bg: #07080D;
+  --cyan: #29DDF4;
+  --magenta: #E45CFF;
+  --amber: #FFC857;
+  --lime: #9CFF4F;
+  --text: #E8F4FF;
+  --muted: #94a3b8;
+  --dim: #64748b;
+  --line: #1a2436;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #app {
+  height: 100%;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: Outfit, system-ui, sans-serif;
+}
+
+body {
+  overflow: hidden;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+button:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
