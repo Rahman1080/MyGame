@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./mechanics";
 export * from "./rotation";
 export * from "./grid";
 export * from "./simulation";

@@ -5,7 +5,44 @@ export const DIR_RIGHT = 1 as const;
 export const DIR_DOWN = 2 as const;
 export const DIR_LEFT = 3 as const;
 
-export type CellType = "empty" | "arrow" | "start" | "exit" | "gate";
+export type CellType =
+  | "empty"
+  | "arrow"
+  | "start"
+  | "exit"
+  | "gate"
+  | "portal"
+  | "wall"
+  | "splitter"
+  | "timed"
+  | "switch"
+  | "rotator"
+  | "barrier"
+  | "checkpoint";
+
+/** Logical mechanic toggles. Experimental mechanics default to off. */
+export type MechanicId =
+  | "colorGates"
+  | "portals"
+  | "oneWayWalls"
+  | "splitters"
+  | "timedTiles"
+  | "switches"
+  | "rotators"
+  | "barriers"
+  | "checkpoints";
+
+export interface MechanicFlags {
+  colorGates: boolean;
+  portals: boolean;
+  oneWayWalls: boolean;
+  splitters: boolean;
+  timedTiles: boolean;
+  switches: boolean;
+  rotators: boolean;
+  barriers: boolean;
+  checkpoints: boolean;
+}
 
 export type ColorName = "cyan" | "magenta" | "amber" | "lime";
 
@@ -15,7 +52,9 @@ export type FailReason =
   | "LOOP"
   | "EXIT_TOO_SOON"
   | "MISSED_NODE"
-  | "WRONG_COLOR";
+  | "WRONG_COLOR"
+  | "PORTAL_LOOP"
+  | "BLOCKED_WALL";
 
 export interface Cell {
   row: number;
@@ -26,6 +65,14 @@ export interface Cell {
   locked?: boolean;
   required?: boolean;
   color?: ColorName;
+  /** Portal pair identifier; the two cells sharing it are linked. */
+  portalId?: string;
+  /** Which end of the pair this cell is, for rendering/labels. */
+  portalSide?: "a" | "b";
+  /** One-way wall: the only travel direction that may cross this cell. */
+  wallDir?: Direction;
+  /** Forward-compatible slot for future mechanics (timers, links). */
+  metadata?: Record<string, number | string | boolean>;
 }
 
 export interface Coord {
