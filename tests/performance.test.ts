@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { generateLevel } from "../src/gen/generator";
+import { TOTAL_LEVELS } from "../src/levels/packs";
 
 describe("performance", () => {
-  it("generates all 80 story levels within a bounded time", () => {
+  it("generates all story levels within a bounded time", () => {
     const t0 = Date.now();
-    for (let i = 1; i <= 80; i += 1) generateLevel(i);
+    for (let i = 1; i <= TOTAL_LEVELS; i += 1) generateLevel(i);
     const elapsed = Date.now() - t0;
     expect(elapsed).toBeLessThan(45000);
   }, 60000);

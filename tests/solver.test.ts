@@ -10,6 +10,7 @@ import {
   solvePuzzle,
 } from "../src/engine";
 import { generateLevel, generatePuzzle } from "../src/gen/generator";
+import { TOTAL_LEVELS } from "../src/levels/packs";
 import { straightPuzzle } from "./helpers";
 import { DIR_DOWN, DIR_LEFT, DIR_RIGHT, DIR_UP } from "../src/engine/types";
 
@@ -138,7 +139,7 @@ describe("par labelling", () => {
   });
 
   it("calculatePar matches the stored par for every story level", () => {
-    for (let level = 1; level <= 80; level += 1) {
+    for (let level = 1; level <= TOTAL_LEVELS; level += 1) {
       const p = generateLevel(level);
       expect(calculatePar(p)).toBe(p.par);
     }

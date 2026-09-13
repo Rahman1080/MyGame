@@ -1,7 +1,7 @@
 /**
  * Frozen content fingerprints for the v1 story campaign.
  *
- * Each entry is `puzzleDigest(getLevel(level))` for levels 1..80 under
+ * Each entry is `puzzleDigest(getLevel(level))` for levels 1..120 under
  * GENERATOR_VERSION "v1". If a generator change alters any level, the
  * `tests/stability.test.ts` guard fails, forcing an explicit version bump
  * instead of silently mutating published levels.
@@ -22,4 +22,9 @@ export const STORY_MANIFEST_V1: readonly string[] = [
   "ab05c720", "46807bcc", "ad3e0d52", "5e254f2f", "ae74d98e", "bf2c992a", "97dc49b6", "20d5b601",
   "096ade9c", "caa7c46e", "03a7ff5f", "808346b7", "cfec8324", "d2052d1d", "bd5035b7", "1812d25c",
   "9356618b", "b822e71a", "5972bf0e", "ac1b7aab", "e60e9179", "a5f6e8a9", "f2cb10c2", "64b19f72",
+  "81edfef8", "da2f2021", "52b06750", "291109bf", "f3640138", "597898bd", "c3315e10", "2ebc4648",
+  "cf0cba4d", "5991b307", "6ffdfd27", "43a87f39", "bd04dcdd", "9a54b0f5", "84b542f2", "9a698ecd",
+  "20744660", "a52da947", "2bac23b4", "8e902ab6", "b216e45e", "6a1e4886", "bf4464ea", "41e392bc",
+  "1e6e1f6e", "ee66b562", "58d7a281", "9202b367", "4822e9b8", "0c0d7d9e", "6c63aca7", "cb3745e9",
+  "98662b07", "69ae05fb", "5c63cb48", "8f0c1346", "da7608ac", "8cb849a9", "4bac39a2", "98d9c9c7",
 ];

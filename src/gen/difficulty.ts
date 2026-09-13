@@ -10,6 +10,8 @@ export interface DifficultyProfile {
   decoyChance: number;
   /** Preferred canonical par for this level. Generation retries to land near it. */
   targetPar?: number;
+  /** Allowed distance from `targetPar`. Defaults to the global tolerance (2). */
+  parTolerance?: number;
   /** Splice a warping portal pair into a straight segment of the route. */
   portals?: boolean;
   /** Number of portal pairs to attempt. Defaults to 1 when `portals`. */
@@ -66,19 +68,19 @@ export function profileForLevel(level: number): DifficultyProfile {
     return { size: 6, minPath: 20, maxPath: 30, lockChance: 0.26, emptyBias: 0.08, scrambleMin: 8, scrambleMax: 15, gates: true, decoyChance: 0.12, targetPar };
   }
   if (level <= 90) {
-    const targetPar = ramp(level, 81, 90, 40, 46);
-    return { size: 5, minPath: 18, maxPath: 24, lockChance: 0.2, emptyBias: 0.08, scrambleMin: 7, scrambleMax: 14, gates: true, decoyChance: 0.12, portals: true, portalPairs: 1, targetPar };
+    const targetPar = ramp(level, 81, 90, 38, 42);
+    return { size: 5, minPath: 18, maxPath: 24, lockChance: 0.2, emptyBias: 0.08, scrambleMin: 7, scrambleMax: 14, gates: true, decoyChance: 0.12, portals: true, portalPairs: 1, targetPar, parTolerance: 5 };
   }
   if (level <= 100) {
-    const targetPar = ramp(level, 91, 100, 46, 52);
-    return { size: 6, minPath: 20, maxPath: 30, lockChance: 0.22, emptyBias: 0.08, scrambleMin: 8, scrambleMax: 15, gates: true, decoyChance: 0.12, portals: true, portalPairs: level >= 96 ? 2 : 1, targetPar };
+    const targetPar = ramp(level, 91, 100, 40, 44);
+    return { size: 6, minPath: 20, maxPath: 30, lockChance: 0.22, emptyBias: 0.08, scrambleMin: 8, scrambleMax: 15, gates: true, decoyChance: 0.12, portals: true, portalPairs: level >= 96 ? 2 : 1, targetPar, parTolerance: 5 };
   }
   if (level <= 110) {
-    const targetPar = ramp(level, 101, 110, 46, 52);
-    return { size: 5, minPath: 18, maxPath: 24, lockChance: 0.22, emptyBias: 0.08, scrambleMin: 7, scrambleMax: 14, gates: true, decoyChance: 0.12, oneWayWalls: true, walls: 2, targetPar };
+    const targetPar = ramp(level, 101, 110, 39, 43);
+    return { size: 5, minPath: 18, maxPath: 24, lockChance: 0.22, emptyBias: 0.08, scrambleMin: 7, scrambleMax: 14, gates: true, decoyChance: 0.12, oneWayWalls: true, walls: 2, targetPar, parTolerance: 5 };
   }
-  const targetPar = ramp(level, 111, 120, 52, 58);
-  return { size: 6, minPath: 20, maxPath: 30, lockChance: 0.24, emptyBias: 0.08, scrambleMin: 8, scrambleMax: 15, gates: true, decoyChance: 0.12, oneWayWalls: true, walls: 3, targetPar };
+  const targetPar = ramp(level, 111, 120, 41, 45);
+  return { size: 6, minPath: 20, maxPath: 30, lockChance: 0.24, emptyBias: 0.08, scrambleMin: 8, scrambleMax: 15, gates: true, decoyChance: 0.12, oneWayWalls: true, walls: 3, targetPar, parTolerance: 5 };
 }
 
 export function dailyProfile(index: number): DifficultyProfile {

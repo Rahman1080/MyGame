@@ -11,13 +11,15 @@ export interface PackInfo {
 }
 
 /** Total number of story levels. Single source of truth. */
-export const TOTAL_LEVELS = 80;
+export const TOTAL_LEVELS = 120;
 
 export const PACKS: PackInfo[] = [
   { id: "pulse", name: "Pulse", start: 1, end: 20, unlockAfter: 0 },
   { id: "surge", name: "Surge", start: 21, end: 40, unlockAfter: 20 },
   { id: "color-gates", name: "Color Gates", start: 41, end: 60, unlockAfter: 40 },
-  { id: "lattice", name: "Lattice", start: 61, end: TOTAL_LEVELS, unlockAfter: 60 },
+  { id: "lattice", name: "Lattice", start: 61, end: 80, unlockAfter: 60 },
+  { id: "wormhole", name: "Wormhole", start: 81, end: 100, unlockAfter: 80 },
+  { id: "vector", name: "Vector", start: 101, end: TOTAL_LEVELS, unlockAfter: 100 },
 ];
 
 const cache = new Map<number, Puzzle>();

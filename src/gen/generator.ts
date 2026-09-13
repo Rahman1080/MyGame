@@ -515,8 +515,9 @@ export function generatePuzzle(seed: number, opts: GenerateOptions): Puzzle {
     if (!validateFinal(puzzle).ok) continue;
 
     if (profile.targetPar === undefined) return puzzle;
+    const tolerance = profile.parTolerance ?? PAR_TOLERANCE;
     const delta = Math.abs(puzzle.par - profile.targetPar);
-    if (delta <= PAR_TOLERANCE) return puzzle;
+    if (delta <= tolerance) return puzzle;
     if (delta < bestDelta) {
       bestDelta = delta;
       best = puzzle;

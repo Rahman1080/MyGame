@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { isSolvable, validatePuzzle } from "../src/engine";
 import { generateLevel, generatePuzzle, seedForLevel } from "../src/gen/generator";
 import { generateDailyRun } from "../src/gen/daily";
+import { TOTAL_LEVELS } from "../src/levels/packs";
 import { tutorialPuzzles } from "../src/gen/templates";
 
 describe("generator", () => {
@@ -33,7 +34,7 @@ describe("generator", () => {
 
   it("stress: many seeds are solvable and terminate", () => {
     const t0 = Date.now();
-    for (let i = 4; i <= 80; i += 1) {
+    for (let i = 4; i <= TOTAL_LEVELS; i += 1) {
       const p = generateLevel(i);
       expect(p.size).toBeGreaterThanOrEqual(3);
       expect(p.size).toBeLessThanOrEqual(6);

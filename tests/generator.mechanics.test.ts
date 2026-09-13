@@ -4,6 +4,7 @@ import { profileForLevel } from "../src/gen/difficulty";
 import { puzzleDigest } from "../src/gen/identity";
 import { isCanonicalSolvable } from "../src/engine/solver";
 import { validateStructure } from "../src/engine/validation";
+import { getLevel } from "../src/levels/packs";
 import type { Puzzle } from "../src/engine/types";
 
 function wormhole(seed: number, pairs = 1): Puzzle {
@@ -64,4 +65,17 @@ describe("generator mechanics", () => {
       expect(isCanonicalSolvable(p)).toBe(true);
     }
   }, 60000);
+
+  it("story levels 81-120 ship their mechanic and stay solvable", () => {
+    for (let level = 81; level <= 100; level += 1) {
+      const p = getLevel(level);
+      expect(p.cells.some((c) => c.type === "portal"), `level ${level}`).toBe(true);
+      expect(isCanonicalSolvable(p), `level ${level}`).toBe(true);
+    }
+    for (let level = 101; level <= 120; level += 1) {
+      const p = getLevel(level);
+      expect(p.cells.some((c) => c.type === "wall"), `level ${level}`).toBe(true);
+      expect(isCanonicalSolvable(p), `level ${level}`).toBe(true);
+    }
+  }, 120000);
 });

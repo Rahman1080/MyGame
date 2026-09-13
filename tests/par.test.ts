@@ -7,11 +7,12 @@ import {
   starsForPuzzle,
 } from "../src/engine";
 import { generateLevel, generatePuzzle } from "../src/gen/generator";
+import { TOTAL_LEVELS } from "../src/levels/packs";
 import { validateFinal } from "../src/engine";
 
 describe("player-facing par is exact minimum", () => {
   it("proves exact minimum par for every story level", () => {
-    for (let level = 1; level <= 80; level += 1) {
+    for (let level = 1; level <= TOTAL_LEVELS; level += 1) {
       const puzzle = generateLevel(level);
       expect(puzzle.parKind).toBe("minimum");
       const r = minimumRotationSolver(puzzle);
@@ -33,7 +34,7 @@ describe("player-facing par is exact minimum", () => {
   it("records a minimum that can be lower than the canonical route", () => {
     const a = canonicalPar(generateLevel(23).cells);
     let foundLower = false;
-    for (let level = 4; level <= 80; level += 1) {
+    for (let level = 4; level <= TOTAL_LEVELS; level += 1) {
       const puzzle = generateLevel(level);
       if (puzzle.par < canonicalPar(puzzle.cells)) foundLower = true;
     }

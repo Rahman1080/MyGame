@@ -1,7 +1,7 @@
 export const SAVE_KEY = "glowtrail:v1";
 export const SAVE_VERSION = 1;
 
-export const KNOWN_PACKS = ["pulse", "surge", "color-gates", "lattice", "daily"] as const;
+export const KNOWN_PACKS = ["pulse", "surge", "color-gates", "lattice", "wormhole", "vector", "daily"] as const;
 
 export const DAILY_LENGTH = 5;
 export const MAX_STARS = 3;

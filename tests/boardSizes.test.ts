@@ -7,6 +7,10 @@ const CASES: Array<{ label: string; level: number; size: number }> = [
   { label: "4x4", level: 35, size: 4 },
   { label: "5x5", level: 55, size: 5 },
   { label: "6x6", level: 80, size: 6 },
+  { label: "5x5 wormhole", level: 85, size: 5 },
+  { label: "6x6 wormhole", level: 95, size: 6 },
+  { label: "5x5 vector", level: 105, size: 5 },
+  { label: "6x6 vector", level: 120, size: 6 },
 ];
 
 describe("board sizes are real, not implicit", () => {
@@ -29,5 +33,9 @@ describe("board sizes are real, not implicit", () => {
     expect(generateLevel(41).size).toBe(5);
     expect(generateLevel(71).size).toBe(6);
     expect(generateLevel(80).size).toBe(6);
+    expect(generateLevel(81).size).toBe(5);
+    expect(generateLevel(101).size).toBe(5);
+    expect(generateLevel(111).size).toBe(6);
+    expect(generateLevel(120).size).toBe(6);
   });
 });

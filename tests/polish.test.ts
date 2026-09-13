@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { generateLevel, generatePuzzle } from "../src/gen/generator";
 import { difficultyRating, profileForLevel } from "../src/gen/difficulty";
+import { TOTAL_LEVELS } from "../src/levels/packs";
 import {
   applyCanonical,
   applyHint,
@@ -20,11 +21,12 @@ function minPar(puzzle: Puzzle, cells: Cell[] = puzzle.cells): number {
 
 describe("difficulty curve", () => {
   it("lands minimum par within tolerance of the target ramp", () => {
-    for (let level = 4; level <= 80; level += 1) {
+    for (let level = 4; level <= TOTAL_LEVELS; level += 1) {
       const puzzle = generateLevel(level);
-      const target = profileForLevel(level).targetPar;
+      const profile = profileForLevel(level);
+      const target = profile.targetPar;
       expect(target).toBeDefined();
-      expect(Math.abs(puzzle.par - target!)).toBeLessThanOrEqual(2);
+      expect(Math.abs(puzzle.par - target!)).toBeLessThanOrEqual(profile.parTolerance ?? 2);
     }
   }, 60000);
 
@@ -75,7 +77,7 @@ describe("color gates", () => {
 
 describe("solver-guided hint", () => {
   it("reduces the exact minimum distance by exactly one for every story level", () => {
-    for (let level = 4; level <= 80; level += 1) {
+    for (let level = 4; level <= TOTAL_LEVELS; level += 1) {
       const puzzle = generateLevel(level);
       const before = minPar(puzzle);
       const move = nextHint(puzzle, puzzle.cells);

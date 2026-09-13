@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyCanonical, simulatePuzzle } from "../src/engine";
 import { generateLevel } from "../src/gen/generator";
+import { TOTAL_LEVELS } from "../src/levels/packs";
 import type { Cell, Direction, Puzzle } from "../src/engine/types";
 import { cell, fillGrid, straightPuzzle } from "./helpers";
 
@@ -274,7 +275,7 @@ describe("deterministic loop detection", () => {
   });
 
   it("winning routes never repeat a coordinate (simple path theorem)", () => {
-    for (let level = 4; level <= 80; level += 1) {
+    for (let level = 4; level <= TOTAL_LEVELS; level += 1) {
       const p = generateLevel(level);
       const r = simulatePuzzle(p, applyCanonical(p.cells));
       expect(r.outcome).toBe("win");
