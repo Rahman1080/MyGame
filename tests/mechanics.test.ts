@@ -1,6 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_MECHANICS, hasMechanic, mechanicsForPack } from "../src/engine/mechanics";
-import type { Cell } from "../src/engine";
+import { validateStructure } from "../src/engine/validation";
+import { DIR_RIGHT } from "../src/engine/types";
+import type { Cell, Coord, Puzzle } from "../src/engine";
+import { cell, fillGrid } from "./helpers";
+
+function build(placed: Cell[], start: Coord = { row: 0, col: 0 }, exit: Coord = { row: 2, col: 2 }): Puzzle {
+  return {
+    id: "mechanics",
+    seed: 1,
+    size: 3,
+    cells: fillGrid(3, placed),
+    start,
+    exit,
+    par: 0,
+    difficulty: 1,
+    pack: "wormhole",
+  };
+}
 
 describe("mechanic flags", () => {
   it("enables shipped mechanics and disables experimental ones", () => {
@@ -28,5 +45,45 @@ describe("mechanic flags", () => {
     const wall: Cell = { row: 0, col: 0, type: "wall", wallDir: 1 };
     expect(portal.portalId).toBe("p1");
     expect(wall.wallDir).toBe(1);
+  });
+});
+
+describe("mechanic structural validation", () => {
+  const base = [cell(0, 0, "start", DIR_RIGHT), cell(2, 2, "exit")];
+
+  it("accepts a balanced portal pair", () => {
+    const p = build([
+      ...base,
+      cell(0, 1, "portal", undefined, { portalId: "p1", portalSide: "a" }),
+      cell(2, 1, "portal", undefined, { portalId: "p1", portalSide: "b" }),
+    ]);
+    expect(validateStructure(p).ok).toBe(true);
+  });
+
+  it("rejects a portal without a pair", () => {
+    const p = build([...base, cell(0, 1, "portal", undefined, { portalId: "p1", portalSide: "a" })]);
+    const v = validateStructure(p);
+    expect(v.ok).toBe(false);
+    expect(v.errors).toContain("portal-unbalanced");
+  });
+
+  it("rejects an unbalanced portal id", () => {
+    const p = build([
+      ...base,
+      cell(0, 1, "portal", undefined, { portalId: "p1", portalSide: "a" }),
+      cell(1, 1, "portal", undefined, { portalId: "p1", portalSide: "b" }),
+      cell(2, 1, "portal", undefined, { portalId: "p1", portalSide: "a" }),
+    ]);
+    expect(validateStructure(p).errors).toContain("portal-unbalanced");
+  });
+
+  it("rejects a portal without an id", () => {
+    const p = build([...base, cell(0, 1, "portal", undefined, { portalSide: "a" })]);
+    expect(validateStructure(p).errors).toContain("portal-no-id");
+  });
+
+  it("rejects a wall without a direction", () => {
+    const p = build([...base, cell(0, 1, "wall")]);
+    expect(validateStructure(p).errors).toContain("wall-no-dir");
   });
 });

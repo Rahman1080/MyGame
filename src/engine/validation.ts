@@ -20,6 +20,8 @@ export function validateStructure(puzzle: Puzzle): Validation {
   if (puzzle.cells.length !== puzzle.size * puzzle.size) errors.push("cell-count");
 
   const seen = new Set<string>();
+  const portalCounts = new Map<string, number>();
+  let portalWithoutId = false;
   for (const c of puzzle.cells) {
     if (!inBounds(puzzle.size, c.row, c.col)) {
       errors.push("oob-cell");
@@ -31,6 +33,15 @@ export function validateStructure(puzzle: Puzzle): Validation {
     if (c.locked && c.direction === undefined) errors.push("locked-empty");
     if (c.required && c.type === "empty") errors.push("required-empty");
     if (c.required && c.type !== "exit" && c.direction === undefined) errors.push("required-no-dir");
+    if (c.type === "wall" && c.wallDir === undefined) errors.push("wall-no-dir");
+    if (c.type === "portal") {
+      if (c.portalId === undefined) portalWithoutId = true;
+      else portalCounts.set(c.portalId, (portalCounts.get(c.portalId) ?? 0) + 1);
+    }
+  }
+  if (portalWithoutId) errors.push("portal-no-id");
+  for (const count of portalCounts.values()) {
+    if (count !== 2) errors.push("portal-unbalanced");
   }
   return { ok: errors.length === 0, errors };
 }
