@@ -22,6 +22,14 @@ function stressProfile(size: number): DifficultyProfile {
   }
 }
 
+function wormholeProfile(size: number): DifficultyProfile {
+  return { ...stressProfile(size), portals: true, portalPairs: size >= 6 ? 2 : 1 };
+}
+
+function vectorProfile(size: number): DifficultyProfile {
+  return { ...stressProfile(size), oneWayWalls: true, walls: 2 };
+}
+
 function p95(values: number[]): number {
   if (values.length === 0) return 0;
   const sorted = values.slice().sort((a, b) => a - b);
@@ -129,6 +137,42 @@ describe("generator stress", () => {
     }
     summarize("exact-min", times, states, emptyMetrics());
     expect(states.length).toBe(EXACT * SIZES.length);
+  }, 600000);
+
+  it("validates wormhole and vector mechanic seeds", async () => {
+    const count = Math.max(60, Math.floor(N / 20));
+    const sizes = [5, 6] as const;
+    for (let i = 0; i < count; i += 1) {
+      await breathe(i);
+      const size = sizes[i % sizes.length]!;
+      const kind = i % 2 === 0 ? "wormhole" : "vector";
+      const profile = kind === "wormhole" ? wormholeProfile(size) : vectorProfile(size);
+      const seed = Math.imul(i + 101, 40503) >>> 0;
+      const puzzle = generatePuzzle(seed, {
+        id: `mech-${i}`,
+        pack: kind,
+        profile,
+        parMode: "minimum",
+        requireExactPar: false,
+        metrics: emptyMetrics(),
+      });
+      const v = validateFinal(puzzle);
+      expect(v.ok, `seed ${seed} ${kind}: ${v.errors.join(",")}`).toBe(true);
+      if (kind === "wormhole") {
+        const counts = new Map<string, number>();
+        for (const c of puzzle.cells) {
+          if (c.type !== "portal") continue;
+          const id = c.portalId ?? "?";
+          counts.set(id, (counts.get(id) ?? 0) + 1);
+        }
+        expect(counts.size, `seed ${seed} produced no portal pair`).toBeGreaterThanOrEqual(1);
+        for (const n of counts.values()) expect(n).toBe(2);
+      } else {
+        const walls = puzzle.cells.filter((c) => c.type === "wall");
+        expect(walls.length, `seed ${seed} produced no walls`).toBeGreaterThanOrEqual(1);
+        for (const w of walls) expect(w.wallDir).toBeDefined();
+      }
+    }
   }, 600000);
 
   it("never returns an unvalidated fallback", () => {

@@ -42,7 +42,7 @@ Normative rules (the only color mechanic in the game):
 
 - `DifficultyProfile` gains `targetPar`.
 - `generatePuzzle` tries up to `MINIMUM_ATTEMPTS` (minimum mode) or `CANONICAL_ATTEMPTS` fresh seeds; accepts the first valid candidate within `PAR_TOLERANCE` of `targetPar`; otherwise returns the closest valid candidate. Falls back to the deterministic validated fallback.
-- `profileForLevel` uses a smooth size/feature/targetPar schedule across 80 levels.
+- `profileForLevel` uses a smooth size/feature/targetPar schedule across 120 levels. Late packs unlock portals (81-100) and one-way walls (101-120); their minimum par sits lower than the canonical-style ramp, so those profiles set a wider `parTolerance` (5).
 - `DIFFICULTY_WEIGHTS` rebalanced so size, par, required count, locks, decoys and route branching all contribute. `alternativeSolutions` is weighted 0 until distinct-solution counting is implemented. UI derives a 1-10 dot rating from `puzzle.difficulty`.
 
 ## Home / level map (D)
@@ -63,8 +63,22 @@ Normative rules (the only color mechanic in the game):
 
 - `npm test`, `npm run typecheck`, `npm run build` all pass.
 - Every generated level is solvable and player-facing `par` equals the proven exact minimum (`parKind === "minimum"`).
-- Minimum par within `PAR_TOLERANCE` of `targetPar` for every story level.
+- Minimum par within the profile's tolerance of `targetPar` for every story level.
 - Color-gate levels require the correct color; non-gate levels have no color requirement.
 - Hint always reduces the exact minimum distance by exactly one and is visibly highlighted.
 - Required vs decoy, locked and gate cells are visually distinct.
 - Home renders without generating puzzles.
+
+## Mechanics expansion (2026-09-13)
+
+Extends the loop with two deterministic, solver-friendly mechanics. Levels 1-80 and their digests are untouched; the campaign appends Wormhole (81-100) and Vector (101-120) so existing save keys and star records survive.
+
+- **Modular tiles, not a mega-switch.** `MechanicFlags` (`src/engine/mechanics.ts`) enables each mechanic per pack. `DEFAULT_MECHANICS` ships colorGates, portals and oneWayWalls; splitters, timed tiles, switches, rotators, barriers and checkpoints exist only as types + flags and are disabled in production.
+- **Pure movement resolver.** `resolveStep(cells, size, from, dir, flags)` returns `move | warp | offGrid | blocked | portalLoop`. A `wall` may only be entered while travelling in its `wallDir`; a `portal` warps to its partner and continues in the same direction, chaining through further portals and guarding against an infinite portal cycle. No clocks or randomness.
+- **Simulation owns cross-cutting state.** `simulatePuzzle` delegates each step to `resolveStep` and keeps required-node coverage, carried color and loop detection. New failure reasons: `BLOCKED_WALL`, `PORTAL_LOOP`.
+- **Exact minimum still proven.** `minimumRotationSolver` dispatches on `puzzleHasWarpMechanics`. Warp boards use a route branch-and-bound that enumerates the four outgoing directions of the resting cell, resolves each through `resolveStep`, and records per-cell `routeDirs`. A winning trajectory never revisits a cell (movement is deterministic), so a visited-set is sound. Base boards use the original orthogonal search unchanged.
+- **Hints on warp routes.** `nextHint` follows `routeDirs` when present so a hint always reduces the proven minimum by exactly one, even across a warp.
+- **Validation.** `validateStructure` rejects a portal without an id, an unbalanced `portalId`, or a wall without `wallDir`.
+- **Generation.** `buildCandidate` splices a portal pair into a straight route segment, demoting skipped cells to decoys; walls convert straight route cells into fixed forced-passage tiles plus off-route decoys. Candidates that request a mechanic but place none are rejected. `featuresFor` counts `portals` and `walls` into the difficulty score.
+- **Presentation.** Portals render as a coloured ring with an `A`/`B` glyph; walls render as a rail with a chevron in the allowed direction. `synth.portal()`/`synth.blocked()` and guarded haptics fire during the launch animation; `debugSummary` gives a one-line snapshot.
+- Tests: `tests/movement.test.ts`, `tests/portal.test.ts`, `tests/wall.test.ts`, `tests/solver.mechanics.test.ts`, `tests/hint.mechanics.test.ts`, `tests/generator.mechanics.test.ts`, `tests/render.test.ts`, plus the 10,000-seed stress matrix.
