@@ -18,6 +18,9 @@ export function cell(
     required,
     locked: extra.locked,
     color: extra.color,
+    portalId: extra.portalId,
+    portalSide: extra.portalSide,
+    wallDir: extra.wallDir,
   };
 }
 

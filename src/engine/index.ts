@@ -2,6 +2,7 @@ export * from "./types";
 export * from "./mechanics";
 export * from "./rotation";
 export * from "./grid";
+export * from "./movement";
 export * from "./simulation";
 export * from "./scoring";
 export * from "./session";
