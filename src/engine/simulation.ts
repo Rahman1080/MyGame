@@ -1,12 +1,14 @@
 import { getCell, inBounds, requiredCount } from "./grid";
-import { directionToDelta } from "./rotation";
+import { resolveStep } from "./movement";
+import { DEFAULT_MECHANICS } from "./mechanics";
 import { resolveTokenColor, requiredExitColor } from "./colorRules";
-import type { Cell, ColorName, Puzzle, SimResult, SimStep } from "./types";
+import type { Cell, ColorName, Direction, MechanicFlags, Puzzle, SimResult, SimStep } from "./types";
 
 const BASE_TOKEN_COLOR: ColorName = "cyan";
 
-function outgoingDir(cell: Cell): number | undefined {
-  if (cell.type === "empty" || cell.type === "exit") return undefined;
+function outgoingDir(cell: Cell): Direction | undefined {
+  if (cell.type === "empty" || cell.type === "exit" || cell.type === "portal") return undefined;
+  if (cell.type === "wall") return cell.wallDir ?? cell.direction;
   return cell.direction;
 }
 
@@ -20,7 +22,18 @@ function requiredStateKey(visited: Set<number>): string {
     .join(".");
 }
 
-export function simulatePuzzle(puzzle: Puzzle, cells: Cell[] = puzzle.cells): SimResult {
+/**
+ * Advance a single token from start to exit.
+ *
+ * Movement is delegated to `resolveStep`, which knows about one-way walls and
+ * portals. This loop owns the cross-cutting state: required-node coverage, the
+ * carried color, loop detection and terminal win/fail decisions.
+ */
+export function simulatePuzzle(
+  puzzle: Puzzle,
+  cells: Cell[] = puzzle.cells,
+  flags: MechanicFlags = DEFAULT_MECHANICS,
+): SimResult {
   const size = puzzle.size;
   const requiredTotal = requiredCount(cells);
   const requiredIndex = new Map<string, number>();
@@ -42,6 +55,23 @@ export function simulatePuzzle(puzzle: Puzzle, cells: Cell[] = puzzle.cells): Si
   const allRequiredVisited = () => visited.size === requiredTotal;
   const guardLimit = size * size * 8 + 8;
 
+  /** Enter a cell mid-warp: update color, path and required coverage. */
+  const visit = (r: number, c: number): SimResult | null => {
+    const ec = getCell(cells, r, c);
+    if (!ec) return { outcome: "fail", reason: "OFF_GRID", path };
+    color = resolveTokenColor(ec, color);
+    path.push({ row: r, col: c, color });
+    const req = requiredIndex.get(key(r, c));
+    if (req !== undefined) visited.add(req);
+    if (ec.type === "exit") {
+      const wanted = requiredExitColor(ec);
+      if (wanted && color !== wanted) return { outcome: "fail", reason: "WRONG_COLOR", path };
+      if (allRequiredVisited()) return { outcome: "win", path };
+      return { outcome: "fail", reason: "EXIT_TOO_SOON", path };
+    }
+    return null;
+  };
+
   for (let guard = 0; guard < guardLimit; guard += 1) {
     if (!inBounds(size, row, col)) {
       return { outcome: "fail", reason: "OFF_GRID", path };
@@ -53,7 +83,6 @@ export function simulatePuzzle(puzzle: Puzzle, cells: Cell[] = puzzle.cells): Si
 
     // Color rule: gates recolour the orb, ordinary arrows do not.
     color = resolveTokenColor(cell, color);
-
     path.push({ row, col, color });
 
     const required = requiredIndex.get(key(row, col));
@@ -83,9 +112,28 @@ export function simulatePuzzle(puzzle: Puzzle, cells: Cell[] = puzzle.cells): Si
       return { outcome: "fail", reason: "DEAD_END", path };
     }
 
-    const { dr, dc } = directionToDelta(dir as 0 | 1 | 2 | 3);
-    row += dr;
-    col += dc;
+    const step = resolveStep(cells, size, { row, col }, dir, flags);
+    if (step.kind === "offGrid") {
+      return { outcome: "fail", reason: "OFF_GRID", path };
+    }
+    if (step.kind === "blocked") {
+      return { outcome: "fail", reason: "BLOCKED_WALL", path };
+    }
+    if (step.kind === "portalLoop") {
+      return { outcome: "fail", reason: "PORTAL_LOOP", path };
+    }
+
+    if (step.kind === "warp") {
+      // Intermediates are portal entries/exits; the landing is handled by the
+      // next loop iteration so it is only appended (and coloured) once.
+      for (const e of step.entered.slice(0, -1)) {
+        const early = visit(e.row, e.col);
+        if (early) return early;
+      }
+    }
+
+    row = step.landing.row;
+    col = step.landing.col;
   }
 
   return { outcome: "fail", reason: "LOOP", path };
