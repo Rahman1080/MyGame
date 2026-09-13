@@ -129,6 +129,20 @@ function firstWrongOnPath(cells: Cell[], path: SimStep[]): HintMove | undefined 
   return undefined;
 }
 
+/** First cell on a proven route whose arrow is not yet correct. */
+function firstWrongOnRoute(
+  cells: Cell[],
+  routeDirs: Array<Direction | undefined>,
+): HintMove | undefined {
+  for (let i = 0; i < cells.length && i < routeDirs.length; i += 1) {
+    const wanted = routeDirs[i];
+    if (wanted === undefined) continue;
+    const move = stepToward(cells[i], wanted);
+    if (move) return move;
+  }
+  return undefined;
+}
+
 /**
  * The next move a solver would make from the *current* board.
  *
@@ -145,8 +159,14 @@ function firstWrongOnPath(cells: Cell[], path: SimStep[]): HintMove | undefined 
 export function nextHint(puzzle: Puzzle, cells: Cell[]): HintMove | undefined {
   const current: Puzzle = { ...puzzle, cells };
   const min = minimumRotationSolver(current);
-  if (min.exact && min.solvable && min.path) {
-    return firstWrongOnPath(current.cells, min.path);
+  if (min.exact && min.solvable) {
+    if (min.routeDirs) {
+      const move = firstWrongOnRoute(current.cells, min.routeDirs);
+      if (move) return move;
+    } else if (min.path) {
+      const move = firstWrongOnPath(current.cells, min.path);
+      if (move) return move;
+    }
   }
   const canonical = canonicalSolution(current);
   if (canonical.result.outcome === "win") {
