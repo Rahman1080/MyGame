@@ -24,18 +24,6 @@ export function cellAt(puzzle: Puzzle, coord: Coord): Cell | undefined {
   return getCell(puzzle.cells, coord.row, coord.col);
 }
 
-export function requiredMaskIndex(cells: Cell[]): Map<string, number> {
-  const map = new Map<string, number>();
-  let i = 0;
-  for (const c of cells) {
-    if (c.required) {
-      map.set(cellKey(c.row, c.col), i);
-      i += 1;
-    }
-  }
-  return map;
-}
-
 export function requiredCount(cells: Cell[]): number {
   return cells.reduce((n, c) => n + (c.required ? 1 : 0), 0);
 }

@@ -14,7 +14,8 @@ export type FailReason =
   | "OFF_GRID"
   | "LOOP"
   | "EXIT_TOO_SOON"
-  | "MISSED_NODE";
+  | "MISSED_NODE"
+  | "WRONG_COLOR";
 
 export interface Cell {
   row: number;
@@ -32,6 +33,15 @@ export interface Coord {
   col: number;
 }
 
+// How `par` was derived.
+//  - "minimum":   exact minimum rotations from the initial state to a valid
+//                 solution (search-based solver completed within budget).
+//  - "canonical": sum of clockwise steps from the initial state to the
+//                 generator's canonical route. This is an upper bound on the
+//                 true minimum and is used when the exact search is not run or
+//                 exceeds its deterministic state budget.
+export type ParKind = "minimum" | "canonical";
+
 export interface Puzzle {
   id: string;
   seed: number;
@@ -40,6 +50,7 @@ export interface Puzzle {
   start: Coord;
   exit: Coord;
   par: number;
+  parKind?: ParKind;
   difficulty: number;
   pack: string;
   tutorial?: boolean;
@@ -67,6 +78,7 @@ export interface PlaySession {
   rotations: number;
   undoStack: { index: number; prev: Direction }[];
   hintUsed: boolean;
+  hint: { row: number; col: number } | null;
   phase: SessionPhase;
   failReason?: FailReason;
   preLaunchCells: Cell[] | null;

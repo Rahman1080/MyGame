@@ -7,12 +7,13 @@ import {
   retry,
   rotateCell,
   undo,
+  type Direction,
   type PlaySession,
   type Puzzle,
   type SimStep,
 } from "../engine";
 import { generateDailyRun, localYmd } from "../gen/daily";
-import { getLevel, nextUnsolved, PACKS, packForLevel } from "../levels/packs";
+import { getLevel, levelId, nextUnsolved, PACKS, packForLevel, TOTAL_LEVELS } from "../levels/packs";
 import { applyStreak, ensureDaily, loadSave, persistSave, recordSolve, starTotal } from "../save/storage";
 import type { SaveData } from "../save/schema";
 import { synth } from "../audio/synth";
@@ -29,7 +30,13 @@ export interface Anim {
   done: boolean;
   winFlash: number;
   failDim: number;
-  rotating: { row: number; col: number; t: number } | null;
+  rotating: {
+    row: number;
+    col: number;
+    t: number;
+    fromDirection: Direction;
+    toDirection: Direction;
+  } | null;
 }
 
 export interface Game {
@@ -115,10 +122,23 @@ export function goHome(game: Game): void {
 
 export function tapCell(game: Game, row: number, col: number): boolean {
   if (!game.session || game.session.phase !== "idle") return false;
+  const before = game.session.cells.find((c) => c.row === row && c.col === col);
+  const fromDirection = before?.direction;
   const ok = rotateCell(game.session, row, col);
   if (ok) {
     synth.rotate();
-    game.anim.rotating = { row, col, t: 0 };
+    const after = game.session.cells.find((c) => c.row === row && c.col === col);
+    if (!game.reduced && fromDirection !== undefined && after?.direction !== undefined) {
+      game.anim.rotating = {
+        row,
+        col,
+        t: 0,
+        fromDirection,
+        toDirection: after.direction,
+      };
+    } else {
+      game.anim.rotating = null;
+    }
     game.selected = { row, col };
   }
   return ok;
@@ -137,8 +157,30 @@ export function doReset(game: Game): void {
 
 export function doHint(game: Game): void {
   if (!game.session) return;
+  if (game.session.phase !== "idle" || game.session.hintUsed) return;
   void noopAds.showRewardedHint();
-  applyHint(game.session);
+  const before = new Map<string, Direction>();
+  for (const c of game.session.cells) {
+    if (c.required && c.direction !== undefined) before.set(`${c.row},${c.col}`, c.direction);
+  }
+  if (!applyHint(game.session)) return;
+  const hint = game.session.hint;
+  if (!hint) return;
+  synth.rotate();
+  const after = game.session.cells.find((c) => c.row === hint.row && c.col === hint.col);
+  const from = before.get(`${hint.row},${hint.col}`);
+  if (!game.reduced && from !== undefined && after?.direction !== undefined) {
+    game.anim.rotating = {
+      row: hint.row,
+      col: hint.col,
+      t: 0,
+      fromDirection: from,
+      toDirection: after.direction,
+    };
+  } else {
+    game.anim.rotating = null;
+  }
+  game.selected = { row: hint.row, col: hint.col };
 }
 
 export function toggleMute(game: Game): void {
@@ -238,7 +280,11 @@ export function nextAfterWin(game: Game): void {
     goHome(game);
     return;
   }
-  const n = Math.min(60, game.level + 1);
+  const n = Math.min(TOTAL_LEVELS, game.level + 1);
+  if (n === game.level) {
+    goHome(game);
+    return;
+  }
   openBoard(game, "story", n);
 }
 
@@ -251,9 +297,15 @@ export function retryForStars(game: Game): void {
 
 export function packProgress(game: Game, start: number, end: number): { solved: number; stars: number; max: number } {
   const ids: string[] = [];
-  for (let i = start; i <= end; i += 1) ids.push(getLevel(i).id);
+  for (let i = start; i <= end; i += 1) ids.push(levelId(i));
   const solved = ids.filter((id) => game.save.solved[id]).length;
   return { solved, stars: starTotal(game.save, ids), max: (end - start + 1) * 3 };
+}
+
+export function totalStars(game: Game): number {
+  let total = 0;
+  for (let i = 1; i <= TOTAL_LEVELS; i += 1) total += game.save.stars[levelId(i)] ?? 0;
+  return total;
 }
 
 export { PACKS };

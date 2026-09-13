@@ -94,3 +94,52 @@ describe("save", () => {
     expect(d.dailyDate).toBe("2026-09-13");
   });
 });
+
+describe("save bounds validation", () => {
+  it("clamps stars to 0..3", () => {
+    const s = sanitizeSave({ stars: { a: 9, b: -3, c: 2.7, d: "x" } });
+    expect(s.stars).toEqual({ a: 3, b: 0, c: 3 });
+  });
+
+  it("clamps dailyStars to 0..3", () => {
+    const s = sanitizeSave({ dailyStars: [5, -1, 3, 3.9, 0] });
+    expect(s.dailyStars).toEqual([3, 0, 3, 3, 0]);
+  });
+
+  it("requires exactly five daily entries", () => {
+    const s = sanitizeSave({ dailyCompleted: [true, true], dailyStars: [1, 2, 3, 4, 5, 6] });
+    expect(s.dailyCompleted).toHaveLength(5);
+    expect(s.dailyStars).toHaveLength(5);
+    expect(s.dailyCompleted).toEqual([true, true, false, false, false]);
+    expect(s.dailyStars).toEqual([1, 2, 3, 3, 3]);
+  });
+
+  it("rejects unknown packs and malformed dates", () => {
+    const s = sanitizeSave({
+      currentPack: "hacked",
+      lastDailyDate: "2026-99-99",
+      dailyDate: "not-a-date",
+    });
+    expect(s.currentPack).toBe("pulse");
+    expect(s.lastDailyDate).toBeNull();
+    expect(s.dailyDate).toBeNull();
+  });
+
+  it("accepts valid packs and dates", () => {
+    const s = sanitizeSave({
+      currentPack: "color-gates",
+      lastDailyDate: "2026-09-12",
+      dailyDate: "2026-02-28",
+    });
+    expect(s.currentPack).toBe("color-gates");
+    expect(s.lastDailyDate).toBe("2026-09-12");
+    expect(s.dailyDate).toBe("2026-02-28");
+  });
+
+  it("requires a non-negative integer streak", () => {
+    expect(sanitizeSave({ streak: -4 }).streak).toBe(0);
+    expect(sanitizeSave({ streak: 2.9 }).streak).toBe(2);
+    expect(sanitizeSave({ streak: 7 }).streak).toBe(7);
+    expect(sanitizeSave({ streak: "x" }).streak).toBe(0);
+  });
+});

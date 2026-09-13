@@ -1,5 +1,6 @@
 import { cloneCells, indexOfCell } from "./grid";
 import { rotateDirection } from "./rotation";
+import { nextHint } from "./solver";
 import { simulatePuzzle } from "./simulation";
 import { calculateStars } from "./scoring";
 import type { Cell, Direction, PlaySession, Puzzle } from "./types";
@@ -11,6 +12,7 @@ export function createSession(puzzle: Puzzle): PlaySession {
     rotations: 0,
     undoStack: [],
     hintUsed: false,
+    hint: null,
     phase: "idle",
     failReason: undefined,
     preLaunchCells: null,
@@ -37,6 +39,7 @@ export function rotateCell(session: PlaySession, row: number, col: number): bool
   cell.direction = rotateDirection(prev, 1);
   session.undoStack.push({ index: i, prev });
   session.rotations += 1;
+  session.hint = null;
   return true;
 }
 
@@ -48,6 +51,7 @@ export function undo(session: PlaySession): boolean {
   if (!cell) return false;
   cell.direction = last.prev;
   session.rotations = Math.max(0, session.rotations - 1);
+  session.hint = null;
   return true;
 }
 
@@ -59,6 +63,7 @@ export function reset(session: PlaySession): void {
   session.failReason = undefined;
   session.preLaunchCells = null;
   session.lastResult = null;
+  session.hint = null;
 }
 
 export function launch(session: PlaySession): boolean {
@@ -68,6 +73,7 @@ export function launch(session: PlaySession): boolean {
   session.preLaunchCells = cloneCells(session.cells);
   session.preLaunchRotations = session.rotations;
   session.phase = "simulating";
+  session.hint = null;
   const result = simulatePuzzle(session.puzzle, session.cells);
   session.lastResult = result;
   if (result.outcome === "win") {
@@ -89,26 +95,30 @@ export function retry(session: PlaySession): boolean {
   session.phase = "idle";
   session.failReason = undefined;
   session.lastResult = null;
+  session.hint = null;
   return true;
+}
+
+export function hintTarget(session: PlaySession): Cell | undefined {
+  const move = nextHint(session.puzzle, session.cells);
+  if (!move) return undefined;
+  return session.cells[indexOfCell(session.cells, move.row, move.col)];
 }
 
 export function applyHint(session: PlaySession): boolean {
   if (session.phase !== "idle") return false;
   if (session.hintUsed) return false;
-  const target = session.cells.find(
-    (c) =>
-      !c.locked &&
-      c.direction !== undefined &&
-      c.canonicalDir !== undefined &&
-      c.direction !== c.canonicalDir,
-  );
-  if (!target) return false;
-  const i = indexOfCell(session.cells, target.row, target.col);
-  const prev = target.direction as Direction;
-  target.direction = rotateDirection(prev, 1);
+  const move = nextHint(session.puzzle, session.cells);
+  if (!move) return false;
+  const i = indexOfCell(session.cells, move.row, move.col);
+  if (i < 0) return false;
+  const cell = session.cells[i]!;
+  const prev = (cell.direction ?? move.from) as Direction;
+  cell.direction = move.to;
   session.undoStack.push({ index: i, prev });
   session.rotations += 1;
   session.hintUsed = true;
+  session.hint = { row: move.row, col: move.col };
   return true;
 }
 

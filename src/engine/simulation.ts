@@ -1,39 +1,48 @@
-import { getCell, inBounds, requiredCount, cellKey } from "./grid";
+import { getCell, inBounds, requiredCount } from "./grid";
 import { directionToDelta } from "./rotation";
+import { resolveTokenColor, requiredExitColor } from "./colorRules";
 import type { Cell, ColorName, Puzzle, SimResult, SimStep } from "./types";
+
+const BASE_TOKEN_COLOR: ColorName = "cyan";
 
 function outgoingDir(cell: Cell): number | undefined {
   if (cell.type === "empty" || cell.type === "exit") return undefined;
   return cell.direction;
 }
 
+function key(row: number, col: number): string {
+  return `${row},${col}`;
+}
+
+function requiredStateKey(visited: Set<number>): string {
+  return Array.from(visited)
+    .sort((a, b) => a - b)
+    .join(".");
+}
+
 export function simulatePuzzle(puzzle: Puzzle, cells: Cell[] = puzzle.cells): SimResult {
   const size = puzzle.size;
   const requiredTotal = requiredCount(cells);
   const requiredIndex = new Map<string, number>();
-  let bit = 0;
+  let index = 0;
   for (const c of cells) {
     if (c.required) {
-      requiredIndex.set(cellKey(c.row, c.col), bit);
-      bit += 1;
+      requiredIndex.set(key(c.row, c.col), index);
+      index += 1;
     }
   }
 
   const path: SimStep[] = [];
   let row = puzzle.start.row;
   let col = puzzle.start.col;
-  let mask = 0;
-  let color: ColorName = "cyan";
+  const visited = new Set<number>();
+  let color: ColorName = BASE_TOKEN_COLOR;
   const seen = new Set<string>();
 
-  const markRequired = () => {
-    const idx = requiredIndex.get(cellKey(row, col));
-    if (idx !== undefined) mask |= 1 << idx;
-  };
+  const allRequiredVisited = () => visited.size === requiredTotal;
+  const guardLimit = size * size * 8 + 8;
 
-  const allRequired = () => mask === (requiredTotal === 0 ? 0 : (1 << requiredTotal) - 1);
-
-  for (let guard = 0; guard < size * size * 8 + 4; guard += 1) {
+  for (let guard = 0; guard < guardLimit; guard += 1) {
     if (!inBounds(size, row, col)) {
       return { outcome: "fail", reason: "OFF_GRID", path };
     }
@@ -42,24 +51,25 @@ export function simulatePuzzle(puzzle: Puzzle, cells: Cell[] = puzzle.cells): Si
       return { outcome: "fail", reason: "OFF_GRID", path };
     }
 
-    if (cell.color && (cell.type === "arrow" || cell.type === "start" || cell.type === "gate")) {
-      if (cell.type !== "gate") color = cell.color;
-    }
+    // Color rule: gates recolour the orb, ordinary arrows do not.
+    color = resolveTokenColor(cell, color);
+
     path.push({ row, col, color });
 
-    markRequired();
+    const required = requiredIndex.get(key(row, col));
+    if (required !== undefined) visited.add(required);
 
     if (cell.type === "exit") {
-      if (allRequired()) return { outcome: "win", path };
+      const wanted = requiredExitColor(cell);
+      if (wanted && color !== wanted) {
+        return { outcome: "fail", reason: "WRONG_COLOR", path };
+      }
+      if (allRequiredVisited()) return { outcome: "win", path };
       return { outcome: "fail", reason: "EXIT_TOO_SOON", path };
     }
 
-    if (cell.type === "gate" && cell.color && cell.color !== color) {
-      return { outcome: "fail", reason: "DEAD_END", path };
-    }
-    if (cell.color && cell.type === "gate") color = cell.color;
-
-    const state = `${row},${col},${mask},${color}`;
+    // Repeat state = same position, same required coverage, same token color.
+    const state = `${row},${col},${requiredStateKey(visited)},${color}`;
     if (seen.has(state)) {
       return { outcome: "fail", reason: "LOOP", path };
     }
@@ -67,7 +77,7 @@ export function simulatePuzzle(puzzle: Puzzle, cells: Cell[] = puzzle.cells): Si
 
     const dir = outgoingDir(cell);
     if (dir === undefined) {
-      if (allRequired()) {
+      if (allRequiredVisited()) {
         return { outcome: "fail", reason: "MISSED_NODE", path };
       }
       return { outcome: "fail", reason: "DEAD_END", path };

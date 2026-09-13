@@ -45,6 +45,7 @@ function p(
     start: { row: start[0], col: start[1] },
     exit: { row: exit[0], col: exit[1] },
     par,
+    parKind: "canonical",
     difficulty: 1,
     pack: "pulse",
     tutorial: true,

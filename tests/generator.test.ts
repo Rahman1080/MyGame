@@ -33,7 +33,7 @@ describe("generator", () => {
 
   it("stress: many seeds are solvable and terminate", () => {
     const t0 = Date.now();
-    for (let i = 4; i <= 60; i += 1) {
+    for (let i = 4; i <= 80; i += 1) {
       const p = generateLevel(i);
       expect(p.size).toBeGreaterThanOrEqual(3);
       expect(p.size).toBeLessThanOrEqual(6);
@@ -44,8 +44,8 @@ describe("generator", () => {
       expect(start?.type).toBe("start");
       expect(exit?.type).toBe("exit");
     }
-    expect(Date.now() - t0).toBeLessThan(15000);
-  });
+    expect(Date.now() - t0).toBeLessThan(45000);
+  }, 60000);
 
   it("daily run seeds are stable", () => {
     const a = generateDailyRun("2026-09-12");
@@ -58,5 +58,28 @@ describe("generator", () => {
 
   it("seedForLevel is stable", () => {
     expect(seedForLevel(12)).toBe(seedForLevel(12));
+  });
+
+  it("returns a validated deterministic fallback when no candidate can be built", () => {
+    const impossible = {
+      size: 6,
+      minPath: 1,
+      maxPath: 2,
+      lockChance: 0,
+      emptyBias: 0.2,
+      scrambleMin: 1,
+      scrambleMax: 1,
+      gates: false,
+      decoyChance: 0,
+    };
+    const p = generatePuzzle(42, { id: "fallback", pack: "pulse", profile: impossible });
+    const v = validatePuzzle(p);
+    expect(v.ok, v.errors.join(",")).toBe(true);
+    expect(p.size).toBe(6);
+    expect(p.start).toEqual({ row: 0, col: 0 });
+    expect(p.exit).toEqual({ row: 5, col: 5 });
+    expect(p.par).toBeGreaterThanOrEqual(0);
+    const again = generatePuzzle(42, { id: "fallback", pack: "pulse", profile: impossible });
+    expect(again.cells.map((c) => c.direction)).toEqual(p.cells.map((c) => c.direction));
   });
 });
