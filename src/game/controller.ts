@@ -17,6 +17,7 @@ import { getLevel, levelId, nextUnsolved, PACKS, packForLevel, TOTAL_LEVELS } fr
 import { applyStreak, ensureDaily, loadSave, persistSave, recordSolve, starTotal } from "../save/storage";
 import type { SaveData } from "../save/schema";
 import { synth } from "../audio/synth";
+import { hapticFail, hapticPortal, hapticWin } from "../audio/haptics";
 import { noopAds } from "../ads/adService";
 
 export type Screen = "home" | "board" | "win";
@@ -227,6 +228,7 @@ function finishSim(game: Game): void {
   game.anim.done = true;
   if (game.session.phase === "won") {
     synth.success();
+    hapticWin();
     game.anim.winFlash = 1;
     const stars = calculateStars(game.session.rotations, game.session.puzzle.par);
     if (game.mode === "story") {
@@ -245,7 +247,9 @@ function finishSim(game: Game): void {
     persist(game);
     game.screen = "win";
   } else {
-    synth.fail();
+    if (game.session.lastResult?.reason === "BLOCKED_WALL") synth.blocked();
+    else synth.fail();
+    hapticFail();
     game.anim.failDim = 1;
   }
 }
@@ -267,7 +271,15 @@ export function tick(game: Game, dt: number): void {
   while (game.anim.t >= game.anim.duration && !game.anim.done) {
     game.anim.t -= game.anim.duration;
     game.anim.index += 1;
-    synth.travel();
+    const prev = game.anim.steps[game.anim.index - 1];
+    const cur = game.anim.steps[game.anim.index];
+    const warped = prev && cur && Math.abs(prev.row - cur.row) + Math.abs(prev.col - cur.col) > 1;
+    if (warped) {
+      synth.portal();
+      hapticPortal();
+    } else {
+      synth.travel();
+    }
     if (game.anim.index >= game.anim.steps.length - 1) {
       finishSim(game);
       break;

@@ -55,6 +55,15 @@ export class Synth {
   fail(): void {
     this.beep(180, 0.18, "triangle", 0.04);
   }
+
+  portal(): void {
+    this.beep(880, 0.06, "sine", 0.03);
+    setTimeout(() => this.beep(1320, 0.09, "sine", 0.03), 55);
+  }
+
+  blocked(): void {
+    this.beep(120, 0.12, "square", 0.03);
+  }
 }
 
 export const synth = new Synth();

@@ -188,6 +188,95 @@ function drawGate(
   ctx.restore();
 }
 
+/** Ring colour index for a portal id. Pure and stable, so it is testable. */
+export function portalRingColorIndex(portalId: string | undefined): number {
+  if (!portalId) return 0;
+  let hash = 0;
+  for (let i = 0; i < portalId.length; i += 1) {
+    hash = (Math.imul(hash, 31) + portalId.charCodeAt(i)) >>> 0;
+  }
+  return hash % 4;
+}
+
+const PORTAL_RING_HEX = [PALETTE.cyan, PALETTE.magenta, PALETTE.amber, PALETTE.lime];
+
+export function portalRingHex(portalId: string | undefined): string {
+  return PORTAL_RING_HEX[portalRingColorIndex(portalId)] ?? PALETTE.cyan;
+}
+
+/** Chevron direction for a wall, defaulting to RIGHT when unset. */
+export function wallChevronDir(wallDir: Direction | undefined): Direction {
+  return wallDir ?? 1;
+}
+
+function drawPortal(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  cell: number,
+  portalId: string | undefined,
+  side: "a" | "b",
+  lit: boolean,
+): void {
+  const hex = portalRingHex(portalId);
+  const r = cell * 0.3;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.shadowColor = hex;
+  ctx.shadowBlur = lit ? 16 : 10;
+  ctx.strokeStyle = hex;
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = withAlpha(hex, 0.45);
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.62, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = withAlpha(hex, 0.18);
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.62, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = hex;
+  ctx.font = `600 ${Math.max(9, Math.floor(cell * 0.26))}px Outfit, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(side === "a" ? "A" : "B", 0, 1);
+  ctx.restore();
+}
+
+function drawWall(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  cell: number,
+  dir: Direction,
+): void {
+  const hex = "#9FB3C8";
+  const half = cell * 0.32;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate((dir * Math.PI) / 2);
+  ctx.strokeStyle = withAlpha(hex, 0.85);
+  ctx.lineWidth = Math.max(3, cell * 0.09);
+  ctx.lineCap = "round";
+  ctx.shadowColor = hex;
+  ctx.shadowBlur = 6;
+  ctx.beginPath();
+  ctx.moveTo(-half, 0);
+  ctx.lineTo(half, 0);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.beginPath();
+  ctx.moveTo(-half * 0.45, half * 0.28);
+  ctx.lineTo(0, -half * 0.22);
+  ctx.lineTo(half * 0.45, half * 0.28);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawGrid(view: BoardView): void {
   const { ctx } = view;
   const gap = Math.max(2, view.cell * 0.06);
@@ -251,6 +340,16 @@ export function drawBoard(view: BoardView, state: DrawState): void {
       ctx.font = `${Math.max(8, Math.floor(view.cell * 0.14))}px Outfit, sans-serif`;
       ctx.textAlign = "right";
       ctx.fillText("OUT", x + view.cell * 0.42, y + view.cell * 0.42);
+      continue;
+    }
+
+    if (cell.type === "portal") {
+      drawPortal(ctx, x, y, view.cell, cell.portalId, cell.portalSide === "b" ? "b" : "a", lit);
+      continue;
+    }
+
+    if (cell.type === "wall") {
+      drawWall(ctx, x, y, view.cell, wallChevronDir(cell.wallDir));
       continue;
     }
 
