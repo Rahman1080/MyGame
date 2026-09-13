@@ -10,6 +10,14 @@ export interface DifficultyProfile {
   decoyChance: number;
   /** Preferred canonical par for this level. Generation retries to land near it. */
   targetPar?: number;
+  /** Splice a warping portal pair into a straight segment of the route. */
+  portals?: boolean;
+  /** Number of portal pairs to attempt. Defaults to 1 when `portals`. */
+  portalPairs?: number;
+  /** Convert straight route cells into fixed one-way walls. */
+  oneWayWalls?: boolean;
+  /** Number of one-way walls to place on the route. Defaults to 1. */
+  walls?: number;
 }
 
 function ramp(level: number, start: number, end: number, from: number, to: number): number {
@@ -19,9 +27,10 @@ function ramp(level: number, start: number, end: number, from: number, to: numbe
 }
 
 /**
- * Smooth 80-level schedule. Size steps 3 -> 4 -> 5 -> 6 while target par climbs
+ * Smooth 120-level schedule. Size steps 3 -> 4 -> 5 -> 6 while target par climbs
  * monotonically, and late packs add density, locks and decoys so every level-up
- * feels harder. Levels 1-3 are hand-authored tutorials and never reach this.
+ * feels harder. Levels 81-100 (wormhole) add portal pairs; 101-120 (vector) add
+ * one-way walls. Levels 1-3 are hand-authored tutorials and never reach this.
  */
 export function profileForLevel(level: number): DifficultyProfile {
   if (level <= 12) {
@@ -52,8 +61,24 @@ export function profileForLevel(level: number): DifficultyProfile {
     const targetPar = ramp(level, 61, 70, 31, 36);
     return { size: 5, minPath: 18, maxPath: 24, lockChance: 0.26, emptyBias: 0.08, scrambleMin: 7, scrambleMax: 14, gates: true, decoyChance: 0.12, targetPar };
   }
-  const targetPar = ramp(level, 71, 80, 36, 40);
-  return { size: 6, minPath: 20, maxPath: 30, lockChance: 0.26, emptyBias: 0.08, scrambleMin: 8, scrambleMax: 15, gates: true, decoyChance: 0.12, targetPar };
+  if (level <= 80) {
+    const targetPar = ramp(level, 71, 80, 36, 40);
+    return { size: 6, minPath: 20, maxPath: 30, lockChance: 0.26, emptyBias: 0.08, scrambleMin: 8, scrambleMax: 15, gates: true, decoyChance: 0.12, targetPar };
+  }
+  if (level <= 90) {
+    const targetPar = ramp(level, 81, 90, 40, 46);
+    return { size: 5, minPath: 18, maxPath: 24, lockChance: 0.2, emptyBias: 0.08, scrambleMin: 7, scrambleMax: 14, gates: true, decoyChance: 0.12, portals: true, portalPairs: 1, targetPar };
+  }
+  if (level <= 100) {
+    const targetPar = ramp(level, 91, 100, 46, 52);
+    return { size: 6, minPath: 20, maxPath: 30, lockChance: 0.22, emptyBias: 0.08, scrambleMin: 8, scrambleMax: 15, gates: true, decoyChance: 0.12, portals: true, portalPairs: level >= 96 ? 2 : 1, targetPar };
+  }
+  if (level <= 110) {
+    const targetPar = ramp(level, 101, 110, 46, 52);
+    return { size: 5, minPath: 18, maxPath: 24, lockChance: 0.22, emptyBias: 0.08, scrambleMin: 7, scrambleMax: 14, gates: true, decoyChance: 0.12, oneWayWalls: true, walls: 2, targetPar };
+  }
+  const targetPar = ramp(level, 111, 120, 52, 58);
+  return { size: 6, minPath: 20, maxPath: 30, lockChance: 0.24, emptyBias: 0.08, scrambleMin: 8, scrambleMax: 15, gates: true, decoyChance: 0.12, oneWayWalls: true, walls: 3, targetPar };
 }
 
 export function dailyProfile(index: number): DifficultyProfile {
@@ -81,6 +106,8 @@ export interface DifficultyFeatures {
   routeBranching: number;
   alternativeSolutions: number;
   density: number;
+  portals: number;
+  walls: number;
 }
 
 export interface DifficultyWeights {
@@ -92,6 +119,8 @@ export interface DifficultyWeights {
   routeBranching: number;
   alternativeSolutions: number;
   density: number;
+  portals: number;
+  walls: number;
 }
 
 /**
@@ -108,6 +137,8 @@ export const DIFFICULTY_WEIGHTS: DifficultyWeights = {
   routeBranching: 1.2,
   alternativeSolutions: 0,
   density: 12,
+  portals: 4,
+  walls: 2,
 };
 
 export function emptyFeatures(): DifficultyFeatures {
@@ -120,6 +151,8 @@ export function emptyFeatures(): DifficultyFeatures {
     routeBranching: 0,
     alternativeSolutions: 0,
     density: 0,
+    portals: 0,
+    walls: 0,
   };
 }
 
@@ -135,7 +168,9 @@ export function scoreDifficulty(
       features.decoys * weights.decoys +
       features.routeBranching * weights.routeBranching +
       features.alternativeSolutions * weights.alternativeSolutions +
-      features.density * weights.density,
+      features.density * weights.density +
+      features.portals * weights.portals +
+      features.walls * weights.walls,
   );
 }
 

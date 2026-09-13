@@ -79,6 +79,158 @@ function scrambleAway(rng: Rng, dir: Direction): Direction {
   return (((dir + steps) % 4) + 4) % 4 as Direction;
 }
 
+/**
+ * Maximal straight runs of the route: cells `start..end` are collinear and each
+ * edge travels in `dir`. A run needs at least three cells to host a mechanic.
+ */
+function straightRuns(
+  path: Array<{ r: number; c: number }>,
+): Array<{ start: number; end: number; dir: Direction }> {
+  const runs: Array<{ start: number; end: number; dir: Direction }> = [];
+  let a = 0;
+  while (a < path.length - 1) {
+    const dir = dirBetween(path[a]!, path[a + 1]!);
+    let b = a + 1;
+    while (b + 1 < path.length && dirBetween(path[b]!, path[b + 1]!) === dir) b += 1;
+    if (b - a >= 2) runs.push({ start: a, end: b, dir });
+    a = b;
+  }
+  return runs;
+}
+
+function isMechanicCell(cell: Cell | undefined): boolean {
+  return cell === undefined || cell.type === "gate" || cell.type === "exit" || cell.type === "portal" || cell.type === "wall";
+}
+
+/**
+ * Splice portal pairs into straight route segments. Entering the first portal
+ * warps the orb to the partner further along the line, skipping the cells in
+ * between; those cells are demoted to non-required decoys so the route still
+ * covers every required node.
+ */
+function applyPortals(
+  rng: Rng,
+  map: Map<string, Cell>,
+  path: Array<{ r: number; c: number }>,
+  pairs: number,
+): void {
+  if (pairs <= 0) return;
+  const used = new Set<string>();
+  for (let p = 0; p < pairs; p += 1) {
+    const candidates: Array<{ i: number; j: number }> = [];
+    for (const run of straightRuns(path)) {
+      const lo = Math.max(run.start, 1);
+      for (let i = lo; i <= run.end - 2; i += 1) {
+        for (let j = i + 2; j <= run.end - 1; j += 1) {
+          let ok = true;
+          for (let k = i; k <= j; k += 1) {
+            const cc = path[k]!;
+            if (used.has(key(cc.r, cc.c)) || isMechanicCell(map.get(key(cc.r, cc.c)))) {
+              ok = false;
+              break;
+            }
+          }
+          if (ok) candidates.push({ i, j });
+        }
+      }
+    }
+    if (candidates.length === 0) break;
+    const pick = rngPick(rng, rngShuffle(rng, candidates));
+    const a = path[pick.i]!;
+    const b = path[pick.j]!;
+    const id = `w${p}`;
+    const ca = map.get(key(a.r, a.c))!;
+    const cb = map.get(key(b.r, b.c))!;
+    ca.type = "portal";
+    ca.portalId = id;
+    ca.portalSide = "a";
+    ca.required = false;
+    ca.direction = undefined;
+    ca.canonicalDir = undefined;
+    ca.color = undefined;
+    cb.type = "portal";
+    cb.portalId = id;
+    cb.portalSide = "b";
+    cb.required = false;
+    cb.direction = undefined;
+    cb.canonicalDir = undefined;
+    cb.color = undefined;
+    for (let k = pick.i + 1; k <= pick.j - 1; k += 1) {
+      const m = map.get(key(path[k]!.r, path[k]!.c));
+      if (m) {
+        m.type = "arrow";
+        m.required = false;
+      }
+    }
+    for (let k = pick.i; k <= pick.j; k += 1) {
+      used.add(key(path[k]!.r, path[k]!.c));
+    }
+  }
+}
+
+/**
+ * Convert straight route cells into fixed one-way walls. The wall is a forced
+ * passage (it keeps its travelling direction) so it costs no rotation, and it
+ * cannot be crossed from the wrong side. A few decorative walls are scattered
+ * off-route to make the board read as an obstacle course.
+ */
+function applyWalls(
+  rng: Rng,
+  map: Map<string, Cell>,
+  path: Array<{ r: number; c: number }>,
+  count: number,
+  size: number,
+): void {
+  if (count <= 0) return;
+  const used = new Set<string>();
+  const candidates: number[] = [];
+  for (const run of straightRuns(path)) {
+    for (let m = run.start + 1; m <= run.end - 1; m += 1) {
+      if (m === 0) continue;
+      const cc = path[m]!;
+      if (!used.has(key(cc.r, cc.c)) && !isMechanicCell(map.get(key(cc.r, cc.c)))) candidates.push(m);
+    }
+  }
+  const shuffled = rngShuffle(rng, candidates);
+  let placed = 0;
+  for (const m of shuffled) {
+    if (placed >= count) break;
+    const cc = path[m]!;
+    const ck = key(cc.r, cc.c);
+    if (used.has(ck)) continue;
+    const cell = map.get(ck);
+    if (!cell) continue;
+    const dir = dirBetween(path[m - 1]!, path[m]!);
+    cell.type = "wall";
+    cell.wallDir = dir;
+    cell.direction = undefined;
+    cell.canonicalDir = undefined;
+    cell.required = false;
+    cell.locked = false;
+    cell.color = undefined;
+    used.add(ck);
+    placed += 1;
+  }
+
+  const decoyChance = 0.12;
+  for (let r = 0; r < size; r += 1) {
+    for (let c = 0; c < size; c += 1) {
+      if (map.has(key(r, c)) || rng() > decoyChance) continue;
+      const nbs = neighbors(size, r, c);
+      if (nbs.length === 0) continue;
+      const dir = rngPick(rng, nbs).dir;
+      map.set(key(r, c), {
+        row: r,
+        col: c,
+        type: "wall",
+        wallDir: dir,
+        required: false,
+        locked: false,
+      });
+    }
+  }
+}
+
 export interface GenerateOptions {
   id: string;
   pack: string;
@@ -150,6 +302,8 @@ function featuresFor(
     routeBranching,
     alternativeSolutions: 0,
     density: size > 0 ? pathLength / (size * size) : 0,
+    portals: puzzle.cells.filter((c) => c.type === "portal").length / 2,
+    walls: puzzle.cells.filter((c) => c.type === "wall").length,
   };
 }
 
@@ -226,6 +380,15 @@ function buildCandidate(
         });
       }
     }
+  }
+
+  if (profile.portals && (profile.portalPairs ?? 1) > 0) {
+    applyPortals(rng, map, path, profile.portalPairs ?? 1);
+    if (![...map.values()].some((c) => c.type === "portal")) return null;
+  }
+  if (profile.oneWayWalls && (profile.walls ?? 1) > 0) {
+    applyWalls(rng, map, path, profile.walls ?? 1, profile.size);
+    if (![...map.values()].some((c) => c.type === "wall")) return null;
   }
 
   const cells = fillFromMap(profile.size, map);
@@ -443,7 +606,18 @@ export function seedForLevel(level: number): number {
 }
 
 export function generateLevel(level: number): Puzzle {
-  const pack = level <= 20 ? "pulse" : level <= 40 ? "surge" : level <= 60 ? "color-gates" : "lattice";
+  const pack =
+    level <= 20
+      ? "pulse"
+      : level <= 40
+        ? "surge"
+        : level <= 60
+          ? "color-gates"
+          : level <= 80
+            ? "lattice"
+            : level <= 100
+              ? "wormhole"
+              : "vector";
   return generatePuzzle(seedForLevel(level), {
     id: `${pack}-${level}`,
     pack,
