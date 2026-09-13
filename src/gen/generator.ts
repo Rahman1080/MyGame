@@ -3,7 +3,8 @@ import { COLORS } from "../engine/types";
 import { canonicalPar, computePar, type ParMode } from "../engine/solver";
 import { validateCanonicalSolution, validateFinal, validateStructure } from "../engine/validation";
 import { fillFromMap } from "./fill";
-import { hashString, mulberry32, rngInt, rngPick, rngShuffle, type Rng } from "./seededRng";
+import { storySeed } from "./identity";
+import { mulberry32, rngInt, rngPick, rngShuffle, type Rng } from "./seededRng";
 import {
   profileForLevel,
   scoreDifficulty,
@@ -85,6 +86,37 @@ export interface GenerateOptions {
   profile?: DifficultyProfile;
   /** Par strategy. "minimum" (default) runs the exact solver; "canonical" is fast. */
   parMode?: ParMode;
+  /**
+   * When true (default for "minimum" mode), candidates whose exact minimum par
+   * cannot be proven within the search budget are rejected instead of being
+   * shipped with a less-trustworthy par. Development/stress can set false.
+   */
+  requireExactPar?: boolean;
+  /** Optional dev-only counters. Populated in place; never affects output. */
+  metrics?: GenerationMetrics;
+}
+
+/** Dev/stress instrumentation. All counters are best-effort and side-effect free. */
+export interface GenerationMetrics {
+  attempts: number;
+  candidates: number;
+  rejectedStructure: number;
+  rejectedCanonical: number;
+  rejectedInexact: number;
+  usedClosest: boolean;
+  usedFallback: boolean;
+}
+
+export function emptyMetrics(): GenerationMetrics {
+  return {
+    attempts: 0,
+    candidates: 0,
+    rejectedStructure: 0,
+    rejectedCanonical: 0,
+    rejectedInexact: 0,
+    usedClosest: false,
+    usedFallback: false,
+  };
 }
 
 interface Candidate {
@@ -245,27 +277,74 @@ function buildCandidate(
  * If every candidate fails validation a deterministic fallback is built and
  * validated; an invalid fallback throws instead of shipping.
  */
-const PAR_TOLERANCE = 1;
-const PAR_ATTEMPTS = 400;
+const PAR_TOLERANCE = 2;
+// Canonical par is a single cheap simulation per candidate. Exact minimum par
+// is a bounded search per candidate, so it is more expensive; 400 attempts keeps
+// the worst level (size 6) under a few hundred ms while still landing every
+// story level within tolerance. Both are deterministic (no wall-clock cutoffs).
+const CANONICAL_ATTEMPTS = 400;
+const MINIMUM_ATTEMPTS = 400;
 
+function devWarn(message: string): void {
+  if (import.meta.env?.DEV) console.warn(`[glowtrail:generator] ${message}`);
+}
+
+/**
+ * Validation pipeline for every generated puzzle:
+ *   generate -> validate structure -> validate canonical solution
+ *   -> compute par -> calculate difficulty -> final validate -> return.
+ *
+ * Player-facing par is the exact minimum rotation count. When the profile sets
+ * `targetPar`, generation tries fresh candidate seeds until the minimum par
+ * lands within `PAR_TOLERANCE`; if none do, the closest valid candidate is
+ * returned so the curve degrades gracefully. Candidates whose exact minimum
+ * cannot be proven within the search budget are rejected (unless
+ * `requireExactPar` is explicitly disabled for dev/stress), and a puzzle is
+ * never shipped labelled "minimum" unless the solver proved it. If every
+ * candidate fails validation a deterministic fallback is built and validated;
+ * an invalid fallback throws instead of shipping.
+ */
 export function generatePuzzle(seed: number, opts: GenerateOptions): Puzzle {
   const profile = opts.profile ?? profileForLevel(opts.level ?? 10);
-  const mode: ParMode = opts.parMode ?? "canonical";
+  const mode: ParMode = opts.parMode ?? "minimum";
+  const requireExact = opts.requireExactPar ?? mode === "minimum";
+  const attempts = mode === "minimum" ? MINIMUM_ATTEMPTS : CANONICAL_ATTEMPTS;
   let best: Puzzle | null = null;
   let bestDelta = Number.POSITIVE_INFINITY;
+  let rejectedInexact = 0;
+  const metrics = opts.metrics;
 
-  for (let attempt = 0; attempt < PAR_ATTEMPTS; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    if (metrics) metrics.attempts += 1;
     const attemptSeed = (seed + Math.imul(attempt, 0x9e3779b1)) >>> 0;
     const rng = mulberry32(attemptSeed);
     const built = buildCandidate(rng, seed, profile, opts);
     if (!built) continue;
     const { puzzle, pathLength, locks } = built;
+    if (metrics) metrics.candidates += 1;
 
-    if (!validateStructure(puzzle).ok) continue;
-    if (!validateCanonicalSolution(puzzle).ok) continue;
+    if (!validateStructure(puzzle).ok) {
+      if (metrics) metrics.rejectedStructure += 1;
+      continue;
+    }
+    if (!validateCanonicalSolution(puzzle).ok) {
+      if (metrics) metrics.rejectedCanonical += 1;
+      continue;
+    }
 
     const parInfo = computePar(puzzle, mode);
     if (!parInfo.solvable) continue;
+
+    if (mode === "minimum" && parInfo.kind !== "minimum") {
+      rejectedInexact += 1;
+      if (metrics) metrics.rejectedInexact += 1;
+      if (requireExact) continue;
+      devWarn(
+        `rejected candidate for ${opts.id}: exact minimum not proven within budget; ` +
+          `falling back to canonical par ${parInfo.par}`,
+      );
+    }
+
     puzzle.par = parInfo.par;
     puzzle.parKind = parInfo.kind;
     puzzle.difficulty = scoreDifficulty(featuresFor(puzzle, pathLength, parInfo.par, locks));
@@ -281,9 +360,16 @@ export function generatePuzzle(seed: number, opts: GenerateOptions): Puzzle {
     }
   }
 
-  if (best) return best;
+  if (best) {
+    if (metrics) metrics.usedClosest = true;
+    if (rejectedInexact > 0) {
+      devWarn(`${opts.id}: ${rejectedInexact} candidate(s) rejected for unproven minimum par`);
+    }
+    return best;
+  }
 
   const fallback = buildFallback(seed, opts.id, opts.pack, profile.size);
+  if (metrics) metrics.usedFallback = true;
   const parInfo = computePar(fallback, mode);
   fallback.par = parInfo.par;
   fallback.parKind = parInfo.kind;
@@ -295,6 +381,9 @@ export function generatePuzzle(seed: number, opts: GenerateOptions): Puzzle {
     throw new Error(
       `generator: fallback puzzle invalid for size ${profile.size} (${check.errors.join(", ")})`,
     );
+  }
+  if (mode === "minimum" && fallback.parKind !== "minimum") {
+    devWarn(`fallback ${opts.id} could not prove exact minimum; labelled canonical`);
   }
   return fallback;
 }
@@ -350,7 +439,7 @@ function buildFallback(seed: number, id: string, pack: string, size: number): Pu
 }
 
 export function seedForLevel(level: number): number {
-  return hashString(`GLOWTRAIL:level:${level}:v1`);
+  return storySeed(level);
 }
 
 export function generateLevel(level: number): Puzzle {

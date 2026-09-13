@@ -1,7 +1,7 @@
 import type { Puzzle } from "../engine/types";
 import { generatePuzzle } from "./generator";
 import { dailyProfile } from "./difficulty";
-import { hashString } from "./seededRng";
+import { dailySeed, GENERATOR_VERSION } from "./identity";
 
 export function localYmd(date = new Date()): string {
   const y = date.getFullYear();
@@ -10,15 +10,15 @@ export function localYmd(date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
-export function daySeed(ymd: string): number {
-  return hashString(`GLOWTRAIL:${ymd}`);
+export function daySeed(ymd: string, version: string = GENERATOR_VERSION): number {
+  return dailySeed(ymd, version);
 }
 
-export function generateDailyRun(ymd: string): Puzzle[] {
-  const base = daySeed(ymd);
+export function generateDailyRun(ymd: string, version: string = GENERATOR_VERSION): Puzzle[] {
+  const base = daySeed(ymd, version);
   return [1, 2, 3, 4, 5].map((i) =>
     generatePuzzle((base + i) >>> 0, {
-      id: `daily-${ymd}-${i}`,
+      id: `daily-${version}-${ymd}-${i}`,
       pack: "daily",
       profile: dailyProfile(i - 1),
     }),

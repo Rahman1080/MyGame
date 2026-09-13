@@ -124,24 +124,17 @@ describe("minimum rotation solver", () => {
 });
 
 describe("par labelling", () => {
-  it("labels generated par as the deterministic canonical target", () => {
+  it("labels player-facing par as the proven exact minimum", () => {
     const p = generatePuzzle(7, { id: "small", pack: "pulse", level: 8 });
+    expect(p.parKind).toBe("minimum");
+    expect(computePar(p, "minimum").kind).toBe("minimum");
+    expect(p.par).toBeLessThanOrEqual(canonicalPar(p.cells));
+  });
+
+  it("keeps the fast canonical mode available and clearly labelled", () => {
+    const p = generatePuzzle(7, { id: "small-canon", pack: "pulse", level: 8, parMode: "canonical" });
     expect(p.parKind).toBe("canonical");
     expect(p.par).toBe(canonicalPar(p.cells));
-    expect(computePar(p, "canonical").par).toBe(p.par);
-  });
-
-  it("still offers the exact minimum solver when asked", () => {
-    const p = generatePuzzle(7, { id: "small-min", pack: "pulse", level: 8 });
-    const min = computePar(p, "minimum");
-    expect(min.solvable).toBe(true);
-    expect(min.par).toBeLessThanOrEqual(p.par);
-  });
-
-  it("marks large boards as canonical par and equals canonicalPar", () => {
-    const p = generatePuzzle(7, { id: "large", pack: "pulse", level: 58 });
-    expect(p.parKind).toBe("canonical");
-    expect(computePar(p, "canonical").par).toBe(canonicalPar(p.cells));
   });
 
   it("calculatePar matches the stored par for every story level", () => {

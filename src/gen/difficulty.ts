@@ -94,6 +94,11 @@ export interface DifficultyWeights {
   density: number;
 }
 
+/**
+ * `alternativeSolutions` is intentionally weighted to 0 and is always computed
+ * as 0 by `featuresFor`. Counting genuinely distinct valid solutions is future
+ * work; until it is implemented it must not contribute to the difficulty score.
+ */
 export const DIFFICULTY_WEIGHTS: DifficultyWeights = {
   size: 9,
   pathLength: 1.2,

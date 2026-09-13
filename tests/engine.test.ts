@@ -159,6 +159,64 @@ describe("session", () => {
     expect(s.cells.find((c) => c.row === 0 && c.col === 1)?.direction).toBe(DIR_LEFT);
     expect(applyHint(s)).toBe(false);
   });
+
+  it("never selects a locked or immovable cell for a hint", () => {
+    const p = straightPuzzle();
+    p.cells = p.cells.map((c) =>
+      c.row === 0 && c.col === 1
+        ? { ...c, direction: DIR_DOWN, canonicalDir: DIR_RIGHT, locked: true }
+        : c,
+    );
+    p.par = 3;
+    const s = createSession(p);
+    expect(applyHint(s)).toBe(false);
+  });
+
+  it("ignores rotations and undo once the run has settled", () => {
+    const s = createSession(straightPuzzle());
+    expect(launch(s)).toBe(true);
+    expect(s.phase).toBe("won");
+    const before = s.cells.find((c) => c.row === 0 && c.col === 1)?.direction;
+    expect(rotateCell(s, 0, 1)).toBe(false);
+    expect(undo(s)).toBe(false);
+    expect(s.cells.find((c) => c.row === 0 && c.col === 1)?.direction).toBe(before);
+  });
+
+  it("retry keeps the same puzzle and does not refund the hint", () => {
+    const p = straightPuzzle();
+    p.cells = p.cells.map((c) =>
+      c.row === 0 && c.col === 1 ? { ...c, direction: DIR_DOWN, canonicalDir: DIR_RIGHT } : c,
+    );
+    p.par = 3;
+    const s = createSession(p);
+    const samePuzzle = s.puzzle;
+    expect(applyHint(s)).toBe(true);
+    const hintCells = s.cells.map((c) => ({ ...c }));
+    expect(launch(s)).toBe(true);
+    expect(s.phase).toBe("failed");
+    expect(retry(s)).toBe(true);
+    expect(s.phase).toBe("idle");
+    expect(s.puzzle).toBe(samePuzzle);
+    expect(s.hintUsed).toBe(true);
+    expect(s.cells).toEqual(hintCells);
+    expect(applyHint(s)).toBe(false);
+  });
+
+  it("reset restores the original board but not the spent hint", () => {
+    const p = straightPuzzle();
+    p.cells = p.cells.map((c) =>
+      c.row === 0 && c.col === 1 ? { ...c, direction: DIR_DOWN, canonicalDir: DIR_RIGHT } : c,
+    );
+    p.par = 3;
+    const s = createSession(p);
+    expect(applyHint(s)).toBe(true);
+    expect(s.cells.find((c) => c.row === 0 && c.col === 1)?.direction).toBe(DIR_LEFT);
+    reset(s);
+    expect(s.rotations).toBe(0);
+    expect(s.cells.find((c) => c.row === 0 && c.col === 1)?.direction).toBe(DIR_DOWN);
+    expect(s.hintUsed).toBe(true);
+    expect(applyHint(s)).toBe(false);
+  });
 });
 
 describe("boards", () => {

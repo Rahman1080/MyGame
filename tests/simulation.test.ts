@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { simulatePuzzle } from "../src/engine";
+import { applyCanonical, simulatePuzzle } from "../src/engine";
+import { generateLevel } from "../src/gen/generator";
 import type { Cell, Direction, Puzzle } from "../src/engine/types";
-import { cell, fillGrid } from "./helpers";
+import { cell, fillGrid, straightPuzzle } from "./helpers";
 
 function snake(side: number): Puzzle {
   const order: Array<[number, number]> = [];
@@ -32,6 +33,27 @@ function snake(side: number): Puzzle {
     cells: fillGrid(side, placed),
     start: { row: order[0]![0], col: order[0]![1] },
     exit: { row: last[0], col: last[1] },
+    par: 0,
+    parKind: "canonical",
+    difficulty: 0,
+    pack: "test",
+  };
+}
+
+function fixedLoopPuzzle(): Puzzle {
+  const cells = fillGrid(3, [
+    cell(0, 0, "start", 1, { required: false }),
+    cell(0, 1, "arrow", 2, { required: true }),
+    cell(1, 1, "arrow", 0, { required: true }),
+    cell(2, 2, "exit"),
+  ]);
+  return {
+    id: "coverage-loop",
+    seed: 0,
+    size: 3,
+    cells,
+    start: { row: 0, col: 0 },
+    exit: { row: 2, col: 2 },
     par: 0,
     parKind: "canonical",
     difficulty: 0,
@@ -180,4 +202,84 @@ describe("simulation outcomes", () => {
     expect(r.outcome).toBe("fail");
     expect(r.reason).toBe("MISSED_NODE");
   });
+});
+
+describe("required-node coverage (all board sizes, safe for 36 cells)", () => {
+  it("covers 36 required cells and reports a win without duplicate counting", () => {
+    const p = snake(6);
+    expect(p.cells.filter((c) => c.required)).toHaveLength(36);
+    const r = simulatePuzzle(p);
+    expect(r.outcome).toBe("win");
+    expect(r.path).toHaveLength(36);
+    expect(new Set(r.path.map((s) => `${s.row},${s.col}`)).size).toBe(36);
+  });
+
+  it("does not inflate the count when a required cell is visited twice", () => {
+    const r = simulatePuzzle(fixedLoopPuzzle());
+    const coords = r.path.map((s) => `${s.row},${s.col}`);
+    expect(coords.filter((k) => k === "0,1").length).toBeGreaterThanOrEqual(2);
+    // Coverage is complete after the second visit, so the only failure is a loop.
+    expect(r.reason).toBe("LOOP");
+  });
+
+  it("ignores empty cells entirely", () => {
+    const p = straightPuzzle();
+    expect(p.cells.some((c) => c.type === "empty")).toBe(true);
+    const r = simulatePuzzle(p);
+    expect(r.outcome).toBe("win");
+    expect(r.path).toHaveLength(5);
+  });
+
+  it("fails on partial coverage but wins on full coverage", () => {
+    const p = snake(5);
+    expect(simulatePuzzle(p).outcome).toBe("win");
+    const partial = p.cells.map((c) =>
+      c.row === 3 && c.col === 0 ? { ...c, direction: 1 as Direction } : c,
+    );
+    expect(simulatePuzzle(p, partial).outcome).toBe("fail");
+  });
+});
+
+describe("deterministic loop detection", () => {
+  it("is deterministic for a simple cycle", () => {
+    const cells = fillGrid(3, [
+      cell(0, 0, "start", 1, { required: false }),
+      cell(0, 1, "arrow", 3, { required: false }),
+      cell(2, 2, "exit"),
+    ]);
+    const p: Puzzle = {
+      id: "cycle",
+      seed: 0,
+      size: 3,
+      cells,
+      start: { row: 0, col: 0 },
+      exit: { row: 2, col: 2 },
+      par: 0,
+      parKind: "canonical",
+      difficulty: 0,
+      pack: "test",
+    };
+    const a = simulatePuzzle(p);
+    const b = simulatePuzzle(p);
+    expect(a).toEqual(b);
+    expect(a.reason).toBe("LOOP");
+  });
+
+  it("continues past a coverage-increasing revisit before detecting repetition", () => {
+    const r = simulatePuzzle(fixedLoopPuzzle());
+    const coords = r.path.map((s) => `${s.row},${s.col}`);
+    expect(coords).toContain("0,1");
+    expect(coords).toContain("1,1");
+    expect(r.reason).toBe("LOOP");
+  });
+
+  it("winning routes never repeat a coordinate (simple path theorem)", () => {
+    for (let level = 4; level <= 80; level += 1) {
+      const p = generateLevel(level);
+      const r = simulatePuzzle(p, applyCanonical(p.cells));
+      expect(r.outcome).toBe("win");
+      const coords = r.path.map((s) => `${s.row},${s.col}`);
+      expect(new Set(coords).size).toBe(coords.length);
+    }
+  }, 60000);
 });

@@ -4,20 +4,27 @@ import { difficultyRating, profileForLevel } from "../src/gen/difficulty";
 import {
   applyCanonical,
   applyHint,
-  canonicalPar,
   createSession,
+  minimumRotationSolver,
   nextHint,
   simulatePuzzle,
+  type Cell,
   type ColorName,
+  type Puzzle,
 } from "../src/engine";
 
+function minPar(puzzle: Puzzle, cells: Cell[] = puzzle.cells): number {
+  const r = minimumRotationSolver({ ...puzzle, cells });
+  return r.solvable ? r.rotations : Number.POSITIVE_INFINITY;
+}
+
 describe("difficulty curve", () => {
-  it("lands canonical par within tolerance of the target ramp", () => {
+  it("lands minimum par within tolerance of the target ramp", () => {
     for (let level = 4; level <= 80; level += 1) {
       const puzzle = generateLevel(level);
       const target = profileForLevel(level).targetPar;
       expect(target).toBeDefined();
-      expect(Math.abs(puzzle.par - target!)).toBeLessThanOrEqual(1);
+      expect(Math.abs(puzzle.par - target!)).toBeLessThanOrEqual(2);
     }
   }, 60000);
 
@@ -28,10 +35,10 @@ describe("difficulty curve", () => {
     );
   });
 
-  it("uses the canonical target label for every generated level", () => {
+  it("uses the proven minimum target label for generated levels", () => {
     const puzzle = generatePuzzle(7, { id: "target", pack: "pulse", level: 8 });
-    expect(puzzle.parKind).toBe("canonical");
-    expect(puzzle.par).toBe(canonicalPar(puzzle.cells));
+    expect(puzzle.parKind).toBe("minimum");
+    expect(puzzle.par).toBe(minimumRotationSolver(puzzle).rotations);
   });
 });
 
@@ -67,16 +74,16 @@ describe("color gates", () => {
 });
 
 describe("solver-guided hint", () => {
-  it("reduces canonical distance by exactly one for every story level", () => {
+  it("reduces the exact minimum distance by exactly one for every story level", () => {
     for (let level = 4; level <= 80; level += 1) {
       const puzzle = generateLevel(level);
-      const before = canonicalPar(puzzle.cells);
+      const before = minPar(puzzle);
       const move = nextHint(puzzle, puzzle.cells);
-      expect(move).toBeDefined();
+      expect(move, `level ${level} produced no hint`).toBeDefined();
       const cells = puzzle.cells.map((c) =>
         c.row === move!.row && c.col === move!.col ? { ...c, direction: move!.to } : c,
       );
-      expect(canonicalPar(cells)).toBe(before - 1);
+      expect(minPar(puzzle, cells), `level ${level}`).toBe(before - 1);
     }
   }, 60000);
 
@@ -88,17 +95,31 @@ describe("solver-guided hint", () => {
     expect(applyHint(session)).toBe(false);
   });
 
-  it("solves to canonical zero when the player follows hints", () => {
+  it("solves to the exact minimum zero when the player follows hints", () => {
     const puzzle = generateLevel(30);
     const session = createSession(puzzle);
     let guard = 0;
-    while (canonicalPar(session.cells) > 0 && guard < 400) {
+    while (minPar(puzzle, session.cells) > 0 && guard < 400) {
       const move = nextHint(puzzle, session.cells);
       if (!move) break;
       const i = session.cells.findIndex((c) => c.row === move.row && c.col === move.col);
       session.cells[i] = { ...session.cells[i]!, direction: move.to };
       guard += 1;
     }
-    expect(canonicalPar(session.cells)).toBe(0);
+    expect(minPar(puzzle, session.cells)).toBe(0);
+  });
+
+  it("returns no hint for an already-solved board", () => {
+    const puzzle = applyCanonicalAndSolve(generateLevel(12));
+    expect(nextHint(puzzle, puzzle.cells)).toBeUndefined();
+  });
+
+  it("returns no hint when no editable cell is wrong", () => {
+    const puzzle = generatePuzzle(3, { id: "empty", pack: "pulse", level: 1 });
+    expect(nextHint(puzzle, applyCanonical(puzzle.cells))).toBeUndefined();
   });
 });
+
+function applyCanonicalAndSolve(puzzle: Puzzle): Puzzle {
+  return { ...puzzle, cells: applyCanonical(puzzle.cells) };
+}

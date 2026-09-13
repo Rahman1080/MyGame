@@ -1,7 +1,7 @@
 import type { Cell, Direction, Puzzle, SimStep } from "../engine/types";
 import { getCell } from "../engine/grid";
-import { clockwiseDistance } from "../engine/rotation";
 import { PALETTE, colorHex, withAlpha } from "./colors";
+import { rotationAngle } from "./rotationAnim";
 
 export interface BoardView {
   canvas: HTMLCanvasElement;
@@ -267,9 +267,7 @@ export function drawBoard(view: BoardView, state: DrawState): void {
       if (rot && rot.row === cell.row && rot.col === cell.col) {
         // Animate OLD -> NEW. `cell.direction` is already the new direction, so
         // we render from the stored `fromDirection` toward `toDirection`.
-        const delta = clockwiseDistance(rot.fromDirection, rot.toDirection);
-        const t = Math.min(1, rot.t);
-        const angle = (rot.fromDirection + delta * t) * (Math.PI / 2);
+        const angle = rotationAngle(rot.fromDirection, rot.toDirection, rot.t);
         drawShaftAt(ctx, x, y, angle, len, withAlpha(hex, alpha), width, doGlow);
       } else {
         drawShaft(ctx, x, y, cell.direction, len, withAlpha(hex, alpha), width, doGlow);

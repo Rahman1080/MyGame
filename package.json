@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:stress": "STRESS_N=5000 vitest run tests/generator.stress.test.ts"
+    "test:stress": "STRESS_N=10000 STRESS_EXACT=40 vitest run tests/generator.stress.test.ts"
   },
   "devDependencies": {
     "typescript": "^5.7.3",

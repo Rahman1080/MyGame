@@ -29,17 +29,21 @@
 
 ## Color gates
 
-- `COLOR_MECHANIC_ENABLED = true`.
-- `resolveTokenColor`: a `gate` with `color` sets the token color; arrows never do.
-- Simulation fails with `WRONG_COLOR` when the exit has a required color and the token color differs.
-- Generator sets each gate's own color and sets `exit.color` to the last gate color along the canonical route; no gates means no color requirement.
+Normative rules (the only color mechanic in the game):
+
+- **Token color**: the orb starts as `cyan` and carries exactly one color at a time.
+- **Gate color**: each `gate` cell has its own fixed `color` (one of cyan, magenta, amber, lime).
+- **When it changes**: entering a `gate` sets the carried color to that gate's color. Ordinary arrows and the start/exit never change it (`resolveTokenColor`, `COLOR_MECHANIC_ENABLED = true`).
+- **Mismatch / failure**: the exit stores `exit.color` = the last gate color on the canonical route. Reaching the exit while carrying a different color fails with `WRONG_COLOR`. Levels with no gates have `exit.color === undefined` and no color rule.
+- **Accessibility**: gates are drawn as diamonds with an inner square marker (shape cue) and only then tinted; the exit shows its demanded color. Color is never the sole cue.
+- Tests: `tests/polish.test.ts` (gated levels win on the canonical route, mismatch fails with `WRONG_COLOR`, plain levels carry no requirement) and `tests/simulation.test.ts`.
 
 ## Difficulty (C)
 
 - `DifficultyProfile` gains `targetPar`.
-- `generatePuzzle` tries up to `PAR_ATTEMPTS` fresh seeds; accepts the first valid candidate within `PAR_TOLERANCE` of `targetPar`; otherwise returns the closest valid candidate. Falls back to the deterministic validated fallback.
-- `profileForLevel` uses a smooth size/feature/targetPar schedule across 60 levels.
-- `DIFFICULTY_WEIGHTS` rebalanced so size, par, required count, locks, decoys and route branching all contribute. UI derives a 1-5 dot rating from `puzzle.difficulty`.
+- `generatePuzzle` tries up to `MINIMUM_ATTEMPTS` (minimum mode) or `CANONICAL_ATTEMPTS` fresh seeds; accepts the first valid candidate within `PAR_TOLERANCE` of `targetPar`; otherwise returns the closest valid candidate. Falls back to the deterministic validated fallback.
+- `profileForLevel` uses a smooth size/feature/targetPar schedule across 80 levels.
+- `DIFFICULTY_WEIGHTS` rebalanced so size, par, required count, locks, decoys and route branching all contribute. `alternativeSolutions` is weighted 0 until distinct-solution counting is implemented. UI derives a 1-10 dot rating from `puzzle.difficulty`.
 
 ## Home / level map (D)
 
@@ -58,9 +62,9 @@
 ## Acceptance criteria
 
 - `npm test`, `npm run typecheck`, `npm run build` all pass.
-- Every generated level is solvable and `calculatePar(p) === p.par`.
-- Canonical par within `PAR_TOLERANCE` of `targetPar` for the large majority of levels.
+- Every generated level is solvable and player-facing `par` equals the proven exact minimum (`parKind === "minimum"`).
+- Minimum par within `PAR_TOLERANCE` of `targetPar` for every story level.
 - Color-gate levels require the correct color; non-gate levels have no color requirement.
-- Hint always reduces clockwise distance to the canonical target and is visibly highlighted.
+- Hint always reduces the exact minimum distance by exactly one and is visibly highlighted.
 - Required vs decoy, locked and gate cells are visually distinct.
 - Home renders without generating puzzles.

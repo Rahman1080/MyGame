@@ -146,7 +146,10 @@ export function tapCell(game: Game, row: number, col: number): boolean {
 
 export function doUndo(game: Game): void {
   if (!game.session) return;
-  if (undo(game.session)) synth.rotate();
+  if (undo(game.session)) {
+    synth.rotate();
+    game.anim.rotating = null;
+  }
 }
 
 export function doReset(game: Game): void {
@@ -191,6 +194,8 @@ export function toggleMute(game: Game): void {
 
 export function doLaunch(game: Game): void {
   if (!game.session) return;
+  // Never start the simulation halfway through an unfinished rotation.
+  if (game.anim.rotating) return;
   if (!game.anim.done && game.session.phase !== "idle") return;
   if (game.session.phase === "failed") {
     retry(game.session);
