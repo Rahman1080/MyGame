@@ -16,8 +16,16 @@ export function hapticRotate(): void {
   vibrate(8);
 }
 
+export function hapticTap(): void {
+  vibrate(5);
+}
+
 export function hapticPortal(): void {
   vibrate([6, 22, 6]);
+}
+
+export function hapticReveal(): void {
+  vibrate([10, 30, 10, 30, 10]);
 }
 
 export function hapticFail(): void {

@@ -1,8 +1,9 @@
 import {
-  applyHint,
   calculateStars,
   createSession,
+  hintLevel,
   launch,
+  requestHint,
   reset,
   retry,
   rotateCell,
@@ -161,30 +162,13 @@ export function doReset(game: Game): void {
 
 export function doHint(game: Game): void {
   if (!game.session) return;
-  if (game.session.phase !== "idle" || game.session.hintUsed) return;
+  const level = hintLevel(game.session);
+  if (!level) return;
+  const result = requestHint(game.session, level);
+  if (!result || !result.available || !result.action) return;
   void noopAds.showRewardedHint();
-  const before = new Map<string, Direction>();
-  for (const c of game.session.cells) {
-    if (c.required && c.direction !== undefined) before.set(`${c.row},${c.col}`, c.direction);
-  }
-  if (!applyHint(game.session)) return;
-  const hint = game.session.hint;
-  if (!hint) return;
   synth.rotate();
-  const after = game.session.cells.find((c) => c.row === hint.row && c.col === hint.col);
-  const from = before.get(`${hint.row},${hint.col}`);
-  if (!game.reduced && from !== undefined && after?.direction !== undefined) {
-    game.anim.rotating = {
-      row: hint.row,
-      col: hint.col,
-      t: 0,
-      fromDirection: from,
-      toDirection: after.direction,
-    };
-  } else {
-    game.anim.rotating = null;
-  }
-  game.selected = { row: hint.row, col: hint.col };
+  game.selected = { row: result.action.row, col: result.action.col };
 }
 
 export function toggleMute(game: Game): void {

@@ -4,10 +4,10 @@ import { difficultyRating, profileForLevel } from "../src/gen/difficulty";
 import { TOTAL_LEVELS } from "../src/levels/packs";
 import {
   applyCanonical,
-  applyHint,
   createSession,
   minimumRotationSolver,
   nextHint,
+  requestHint,
   simulatePuzzle,
   type Cell,
   type ColorName,
@@ -91,10 +91,10 @@ describe("solver-guided hint", () => {
 
   it("records a visible hint and fires only once per puzzle", () => {
     const session = createSession(generateLevel(20));
-    expect(applyHint(session)).toBe(true);
+    expect(requestHint(session, 1)?.available).toBe(true);
     expect(session.hint).not.toBeNull();
     expect(session.hintUsed).toBe(true);
-    expect(applyHint(session)).toBe(false);
+    expect(requestHint(session, 1)).toBeNull();
   });
 
   it("solves to the exact minimum zero when the player follows hints", () => {

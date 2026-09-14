@@ -17,15 +17,12 @@
 2. **Real color-gate rule.** Token starts cyan; passing a gate sets token color; the exit accepts only the color of the last gate on the route. Levels without gates have no color requirement.
 3. **Difficulty = measured features + target curve.** Each level has a `targetPar`; generation retries (bounded) until canonical par lands within `PAR_TOLERANCE`. Size and feature schedule ramps smoothly.
 4. **Required nodes are visually primary.** Required arrows glow with a cell ring; decoys are dim and ringless. Locks show a hatch and lock glyph. Gates are colored diamonds. The exit shows its required color.
-5. **Hint = next unsolved step on the canonical route**, highlighted with a pulsing ring, animated like a manual rotation, still once per puzzle.
+5. **Hint = current-state solver assistant.** A hint is derived from the player's actual board, verified by the solver before it is shown, and never rotates the cell for the player. Superseded by the intelligent hint system below.
 6. **Home gets a real level map**: stats, Continue card, Daily card, pack tabs, and a per-level grid with stars and lock state. Level ids are derived without generating puzzles.
 
 ## Hint (A)
 
-- `nextHint(puzzle, cells)` walks the canonical solution path and returns the first required, unlocked cell whose direction differs from `canonicalDir` as `{ row, col, from, to }`, `to = rotateDirection(from, 1)`. Falls back to row-major scan.
-- `applyHint` records the move on `session.hint`, sets `hintUsed`, and increments rotations via the normal undo stack.
-- `doHint` animates the rotation exactly like `tapCell` and plays the rotate sound.
-- Board renders a pulsing double ring on `hint`.
+Superseded by the Intelligent hint system at the bottom of this document. The historic `nextHint` helper (canonical route walk) still exists for internal comparisons, but the product uses `getHint`/`requestHint`.
 
 ## Color gates
 
@@ -82,3 +79,18 @@ Extends the loop with two deterministic, solver-friendly mechanics. Levels 1-80 
 - **Generation.** `buildCandidate` splices a portal pair into a straight route segment, demoting skipped cells to decoys; walls convert straight route cells into fixed forced-passage tiles plus off-route decoys. Candidates that request a mechanic but place none are rejected. `featuresFor` counts `portals` and `walls` into the difficulty score.
 - **Presentation.** Portals render as a coloured ring with an `A`/`B` glyph; walls render as a rail with a chevron in the allowed direction. `synth.portal()`/`synth.blocked()` and guarded haptics fire during the launch animation; `debugSummary` gives a one-line snapshot.
 - Tests: `tests/movement.test.ts`, `tests/portal.test.ts`, `tests/wall.test.ts`, `tests/solver.mechanics.test.ts`, `tests/hint.mechanics.test.ts`, `tests/generator.mechanics.test.ts`, `tests/render.test.ts`, plus the 10,000-seed stress matrix.
+
+## Intelligent hint system (2026-09-13)
+
+Replaces "first wrong cell on the canonical route" with a small deterministic solving assistant. A hint is always CURRENT STATE -> CANDIDATE ACTIONS -> SIMULATE -> SOLVE/VERIFY -> RANK -> CHOOSE -> EXPLAIN -> SHOW, never CURRENT STATE -> GUESS -> SHOW.
+
+- **Module.** `src/engine/hints.ts` is pure (no DOM/clocks/randomness). `getHint(puzzle, PlayerSolveState, options)` returns a `HintResult`; `buildSolution`, `solutionDistance` and `rankCandidates` are exported for tests and debug.
+- **Solution model.** `buildSolution` prefers the proven exact-minimum solution from the player's board (which honours rotations already made); it falls back to the canonical route only when the exact search cannot complete and only if that route is reachable (no locked cell forced to an impossible direction). `Solution` carries per-cell target directions, `RotationAction[]`, total rotations, `exact` and `parKind`.
+- **Candidate ranking.** Candidates are the first clockwise step toward each still-wrong target. Locked cells, empties, exits, walls and portals are excluded. Ranking weighs required nodes, the mechanic involved (portal/gate/wall/exit/node) and route order, then breaks ties deterministically.
+- **Verification.** Before a hint is shown it is simulated on a cloned state. For exact solutions the clone is re-solved and must strictly reduce the proven minimum; for canonical fallbacks the remaining route is simulated to a win. Unverified actions are discarded rather than shown.
+- **Two levels.** First hint is a single precise action. Tapping "More" recomputes from the board *after* the player's latest moves and, when useful, adds a verified second action or "then Launch". `hintUsed`/`strongHintUsed` are spent per puzzle; reset/retry do not refund them.
+- **No auto-rotation.** `doHint` highlights one cell and prints a banner; `requestHint` never mutates `session.cells` or `rotations`. The player performs the rotation.
+- **Failure-aware.** `session.lastFailReason` feeds the hint text (wrong color, blocked wall, missed nodes, portal loop, dead end/loop/off-grid) while the action itself stays solver-verified.
+- **Mechanics.** Because verification runs the real simulator/solver, hints work with color gates, portals and one-way walls automatically. Experimental mechanics remain types/flags only; unknown mechanic cells are treated conservatively (a candidate is rejected unless it stays solvable).
+- **Debug.** `hintDebug(result)` in `src/dev/debug.ts` prints confidence, distance, chosen/second action and candidate count.
+- Tests: `tests/hints.test.ts` (24) plus session/controller regressions.

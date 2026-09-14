@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyHint,
   calculateStars,
   createSession,
   DIR_DOWN,
@@ -8,6 +7,7 @@ import {
   DIR_RIGHT,
   DIR_UP,
   launch,
+  requestHint,
   reset,
   retry,
   rotateCell,
@@ -147,20 +147,24 @@ describe("session", () => {
     expect(launch(s)).toBe(false);
   });
 
-  it("hint rotates exactly one cell toward canonical and only once", () => {
+  it("hint highlights one cell without rotating and only once", () => {
     const p = straightPuzzle();
     p.cells = p.cells.map((c) =>
       c.row === 0 && c.col === 1 ? { ...c, direction: DIR_DOWN, canonicalDir: DIR_RIGHT } : c,
     );
     p.par = 1;
     const s = createSession(p);
-    expect(applyHint(s)).toBe(true);
+    const before = JSON.stringify(s.cells);
+    const result = requestHint(s, 1);
+    expect(result?.available).toBe(true);
     expect(s.hintUsed).toBe(true);
-    expect(s.cells.find((c) => c.row === 0 && c.col === 1)?.direction).toBe(DIR_LEFT);
-    expect(applyHint(s)).toBe(false);
+    expect(s.rotations).toBe(0);
+    expect(JSON.stringify(s.cells)).toBe(before);
+    expect(s.hint).not.toBeNull();
+    expect(requestHint(s, 1)).toBeNull();
   });
 
-  it("never selects a locked or immovable cell for a hint", () => {
+  it("never hints a locked or immovable cell", () => {
     const p = straightPuzzle();
     p.cells = p.cells.map((c) =>
       c.row === 0 && c.col === 1
@@ -169,7 +173,9 @@ describe("session", () => {
     );
     p.par = 3;
     const s = createSession(p);
-    expect(applyHint(s)).toBe(false);
+    const result = requestHint(s, 1);
+    expect(result?.available).toBe(false);
+    expect(s.hint).toBeNull();
   });
 
   it("ignores rotations and undo once the run has settled", () => {
@@ -190,7 +196,7 @@ describe("session", () => {
     p.par = 3;
     const s = createSession(p);
     const samePuzzle = s.puzzle;
-    expect(applyHint(s)).toBe(true);
+    expect(requestHint(s, 1)?.available).toBe(true);
     const hintCells = s.cells.map((c) => ({ ...c }));
     expect(launch(s)).toBe(true);
     expect(s.phase).toBe("failed");
@@ -199,7 +205,7 @@ describe("session", () => {
     expect(s.puzzle).toBe(samePuzzle);
     expect(s.hintUsed).toBe(true);
     expect(s.cells).toEqual(hintCells);
-    expect(applyHint(s)).toBe(false);
+    expect(requestHint(s, 1)).toBeNull();
   });
 
   it("reset restores the original board but not the spent hint", () => {
@@ -209,13 +215,12 @@ describe("session", () => {
     );
     p.par = 3;
     const s = createSession(p);
-    expect(applyHint(s)).toBe(true);
-    expect(s.cells.find((c) => c.row === 0 && c.col === 1)?.direction).toBe(DIR_LEFT);
+    expect(requestHint(s, 1)?.available).toBe(true);
     reset(s);
     expect(s.rotations).toBe(0);
     expect(s.cells.find((c) => c.row === 0 && c.col === 1)?.direction).toBe(DIR_DOWN);
     expect(s.hintUsed).toBe(true);
-    expect(applyHint(s)).toBe(false);
+    expect(requestHint(s, 1)).toBeNull();
   });
 });
 

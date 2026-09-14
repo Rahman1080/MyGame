@@ -7,4 +7,5 @@ export * from "./simulation";
 export * from "./scoring";
 export * from "./session";
 export * from "./solver";
+export * from "./hints";
 export * from "./validation";

@@ -119,15 +119,25 @@ export interface SimResult {
 
 export type SessionPhase = "idle" | "simulating" | "won" | "failed";
 
+export interface HintDisplay {
+  row: number;
+  col: number;
+  /** Direction the hint suggests rotating to (one clockwise step). */
+  to: Direction;
+  message: string;
+}
+
 export interface PlaySession {
   puzzle: Puzzle;
   cells: Cell[];
   rotations: number;
   undoStack: { index: number; prev: Direction }[];
   hintUsed: boolean;
-  hint: { row: number; col: number } | null;
+  strongHintUsed: boolean;
+  hint: HintDisplay | null;
   phase: SessionPhase;
   failReason?: FailReason;
+  lastFailReason?: FailReason;
   preLaunchCells: Cell[] | null;
   preLaunchRotations: number;
   lastResult: SimResult | null;

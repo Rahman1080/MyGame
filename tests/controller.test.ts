@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createGame, doLaunch, openBoard, tapCell, tick } from "../src/game/controller";
+import { createGame, doHint, doLaunch, openBoard, tapCell, tick } from "../src/game/controller";
 import { DIR_RIGHT, DIR_UP, rotateDirection } from "../src/engine";
 import { rotationAngle } from "../src/render/rotationAnim";
 
@@ -46,6 +46,22 @@ describe("rotation animation state", () => {
     doLaunch(game);
     expect(game.session!.phase).toBe("idle");
     expect(game.anim.rotating).not.toBeNull();
+  });
+});
+
+describe("hint does not auto-rotate", () => {
+  it("highlights a cell without changing the board", () => {
+    const game = createGame();
+    openBoard(game, "story", 5);
+    const before = JSON.stringify(game.session!.cells);
+    doHint(game);
+    expect(game.session!.hint).not.toBeNull();
+    expect(game.session!.rotations).toBe(0);
+    expect(JSON.stringify(game.session!.cells)).toBe(before);
+    expect(game.selected).toEqual({
+      row: game.session!.hint!.row,
+      col: game.session!.hint!.col,
+    });
   });
 });
 

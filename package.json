@@ -10,11 +10,22 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:stress": "STRESS_N=10000 STRESS_EXACT=40 vitest run tests/generator.stress.test.ts"
+    "test:stress": "STRESS_N=10000 STRESS_EXACT=40 vitest run tests/generator.stress.test.ts",
+    "android:sync": "npm run build && cap sync android",
+    "android:apk": "npm run android:sync && ./android/gradlew -p android assembleRelease",
+    "android:aab": "npm run android:sync && ./android/gradlew -p android bundleRelease",
+    "android:open": "cap open android"
   },
   "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.2.2",
     "typescript": "^5.7.3",
     "vite": "^6.2.0",
     "vitest": "^3.0.8"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/app": "^6.0.3",
+    "@capacitor/core": "^6.2.2"
   }
 }

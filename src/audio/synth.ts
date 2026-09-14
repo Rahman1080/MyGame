@@ -39,6 +39,14 @@ export class Synth {
     this.beep(420, 0.06, "square", 0.03);
   }
 
+  tap(): void {
+    this.beep(300, 0.04, "sine", 0.02);
+  }
+
+  step(): void {
+    this.beep(560, 0.035, "sine", 0.018);
+  }
+
   launch(): void {
     this.beep(220, 0.12, "sawtooth", 0.04);
   }
@@ -49,11 +57,18 @@ export class Synth {
 
   success(): void {
     this.beep(523, 0.1, "sine", 0.05);
-    setTimeout(() => this.beep(784, 0.16, "sine", 0.05), 80);
+    setTimeout(() => this.beep(659, 0.12, "sine", 0.05), 80);
+    setTimeout(() => this.beep(784, 0.18, "sine", 0.05), 170);
+  }
+
+  star(): void {
+    this.beep(880, 0.07, "sine", 0.045);
+    setTimeout(() => this.beep(1320, 0.12, "sine", 0.045), 70);
   }
 
   fail(): void {
-    this.beep(180, 0.18, "triangle", 0.04);
+    this.beep(220, 0.14, "triangle", 0.04);
+    setTimeout(() => this.beep(150, 0.2, "triangle", 0.04), 90);
   }
 
   portal(): void {
@@ -63,6 +78,15 @@ export class Synth {
 
   blocked(): void {
     this.beep(120, 0.12, "square", 0.03);
+  }
+
+  reveal(): void {
+    this.beep(392, 0.1, "sine", 0.04);
+    setTimeout(() => this.beep(587, 0.16, "sine", 0.04), 90);
+  }
+
+  sweep(): void {
+    this.beep(960, 0.028, "sine", 0.014);
   }
 }
 

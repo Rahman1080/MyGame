@@ -5,3 +5,8 @@ dist
 .vite
 coverage
 .superpowers
+
+# Android signing secrets (never commit)
+.android-signing/
+*.jks
+*.keystore

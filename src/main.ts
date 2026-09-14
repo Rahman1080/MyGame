@@ -17,12 +17,25 @@ import {
   totalStars,
   type Game,
 } from "./game/controller";
-import { calculateStars, type Puzzle } from "./engine";
+import { calculateStars, solvedPreview, type Puzzle, type SolvedPreview } from "./engine";
 import { attachBoard, cellCenter, drawBoard, hitCell, layoutBoard, startToken, type BoardView } from "./render/board";
 import { colorHex } from "./render/colors";
-import { ICON_FLAME, ICON_HINT, ICON_LOCK, ICON_MUTE, ICON_UNDO, ICON_UNMUTE } from "./ui/icons";
-import { isLevelUnlocked, levelId, nextUnsolved, packForLevel, PACKS } from "./levels/packs";
+import {
+  ICON_CHEVRON,
+  ICON_EYE,
+  ICON_FLAME,
+  ICON_HINT,
+  ICON_LOCK,
+  ICON_MENU,
+  ICON_MUTE,
+  ICON_UNDO,
+  ICON_UNMUTE,
+} from "./ui/icons";
+import { getLevel, isLevelUnlocked, levelId, nextUnsolved, packForLevel, PACKS, TOTAL_LEVELS } from "./levels/packs";
 import { difficultyRating } from "./gen/difficulty";
+import { synth } from "./audio/synth";
+import { hapticReveal, hapticTap } from "./audio/haptics";
+import { App } from "@capacitor/app";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const game = createGame();
@@ -30,6 +43,15 @@ let view: BoardView | null = null;
 let last = performance.now();
 let boardCss = 280;
 let selectedPack = packForLevel(game.level).id;
+const UNLOCK_ALL_LEVELS = false;
+const REVEAL_MS = 900;
+
+let levelsOpen = false;
+let solutionsMode = false;
+let menuOpen = false;
+let reveal: { preview: SolvedPreview; puzzle: Puzzle; label: string } | null = null;
+let revealStart = 0;
+let revealView: BoardView | null = null;
 
 function reduced(): boolean {
   return game.reduced;
@@ -46,7 +68,7 @@ function starDots(stars: number): string {
   return [0, 1, 2].map((i) => `<i class="dot${i < stars ? " on" : ""}"></i>`).join("");
 }
 
-function homeHtml(): string {
+function homeHtml(fresh = false): string {
   const level = nextUnsolved(game.save.solved, 1);
   const levelPack = packForLevel(level);
   if (!PACKS.some((p) => p.id === selectedPack)) selectedPack = levelPack.id;
@@ -54,20 +76,27 @@ function homeHtml(): string {
   const packProg = packProgress(game, pack.start, pack.end);
   const contProg = packProgress(game, levelPack.start, levelPack.end);
   const total = totalStars(game);
+  const cleared = PACKS.reduce((n, p) => n + packProgress(game, p.start, p.end).solved, 0);
   const s = game.save.streak;
   const dailyDone = game.save.dailyCompleted.filter(Boolean).length;
 
   const tabs = PACKS.map((p) => {
-    const locked = p.unlockAfter > 0 && packProgress(game, 1, p.unlockAfter).solved < p.unlockAfter;
+    const locked = !UNLOCK_ALL_LEVELS && p.unlockAfter > 0 && packProgress(game, 1, p.unlockAfter).solved < p.unlockAfter;
     return `<button class="pack-tab${p.id === pack.id ? " active" : ""}${locked ? " locked" : ""}" data-act="tab" data-pack="${p.id}" ${locked ? "disabled" : ""}>${p.name}</button>`;
   }).join("");
 
   const tiles: string[] = [];
   for (let l = pack.start; l <= pack.end; l += 1) {
     const id = levelId(l);
+    if (solutionsMode) {
+      tiles.push(
+        `<button class="lv-tile preview" data-act="preview" data-level="${l}" aria-label="Preview solved level ${l}"><span class="lv-n">${l}</span><span class="lv-eye">${ICON_EYE}</span></button>`,
+      );
+      continue;
+    }
     const solved = !!game.save.solved[id];
     const stars = game.save.stars[id] ?? 0;
-    const unlocked = isLevelUnlocked(game.save.solved, l);
+    const unlocked = UNLOCK_ALL_LEVELS || isLevelUnlocked(game.save.solved, l);
     const cls = ["lv-tile", solved ? "solved" : "", l === level ? "current" : "", unlocked ? "" : "locked"]
       .filter(Boolean)
       .join(" ");
@@ -79,7 +108,22 @@ function homeHtml(): string {
     );
   }
 
-  return `<div class="shell">
+  const panel = levelsOpen
+    ? `<div class="levels-body" id="levels-body">
+        <div class="mode-switch" role="tablist" aria-label="Level map mode">
+          <button class="mode-opt${solutionsMode ? "" : " active"}" data-act="mode-play" role="tab" aria-selected="${!solutionsMode}">Play</button>
+          <button class="mode-opt${solutionsMode ? " active" : ""}" data-act="mode-solutions" role="tab" aria-selected="${solutionsMode}">${ICON_EYE}<span>Solutions</span></button>
+        </div>
+        <div class="pack-tabs">${tabs}</div>
+        <div class="pack-head">
+          <span class="pack-head-name">${pack.name}</span>
+          <span class="pack-head-stars">★ ${packProg.stars}/${packProg.max}</span>
+        </div>
+        <div class="level-grid">${tiles.join("")}</div>
+      </div>`
+    : "";
+
+  return `<div class="shell${fresh ? " enter" : ""}">
     <div class="home">
       <div class="home-top">
         <div class="wordmark">GLOWTRAIL</div>
@@ -102,13 +146,14 @@ function homeHtml(): string {
         <div><div class="k">Daily Run</div><div class="sub">${dailyDone >= 5 ? "Complete today" : `${dailyDone}/5 · Today`}</div></div>
         <div class="streak-pill">${ICON_FLAME}<span class="streak-n">${s} DAY</span></div>
       </button>
-      <div class="pack-tabs">${tabs}</div>
-      <div class="pack-head">
-        <span class="pack-head-name">${pack.name}</span>
-        <span class="pack-head-stars">★ ${packProg.stars}/${packProg.max}</span>
-      </div>
-      <div class="level-grid">${tiles.join("")}</div>
+      <button class="levels-toggle${levelsOpen ? " open" : ""}" data-act="toggle-levels" aria-expanded="${levelsOpen}" aria-controls="levels-body">
+        <span class="levels-title">LEVELS</span>
+        <span class="levels-sum">${cleared}/${TOTAL_LEVELS} · ★${total}</span>
+        <span class="levels-chevron" aria-hidden="true">${ICON_CHEVRON}</span>
+      </button>
+      ${panel}
     </div>
+    ${revealModalHtml()}
   </div>`;
 }
 
@@ -157,16 +202,62 @@ function statusText(): string {
   return "";
 }
 
-function boardHtml(): string {
+function revealModalHtml(): string {
+  if (!reveal) return "";
+  const tag = reveal.preview.exact ? "MINIMUM" : "TARGET";
+  return `<div class="modal-scrim" data-act="reveal-close">
+    <div class="reveal-card" role="dialog" aria-modal="true" aria-label="Solved route" data-act="reveal-hold">
+      <div class="reveal-head"><span class="reveal-label">${reveal.label}</span><span class="reveal-tag">${tag}</span></div>
+      <canvas id="reveal-canvas" aria-hidden="true"></canvas>
+      <p class="reveal-copy">Solved route — now solve it yourself.</p>
+      <button class="cta-play compact" data-act="reveal-close">Got it</button>
+    </div>
+  </div>`;
+}
+
+function boardMenuHtml(): string {
+  if (!menuOpen) return "";
+  return `<div class="sheet-scrim" data-act="menu-close">
+    <div class="sheet" role="menu" aria-label="Level menu" data-act="menu-hold">
+      <button class="sheet-item" role="menuitem" data-act="home">Home</button>
+      <button class="sheet-item" role="menuitem" data-act="reset">Reset board</button>
+      <button class="sheet-item accent" role="menuitem" data-act="reveal">Reveal solution</button>
+    </div>
+  </div>`;
+}
+
+function openReveal(puzzle: Puzzle, label: string): void {
+  const preview = solvedPreview(puzzle);
+  if (!preview) return;
+  reveal = { preview, puzzle, label };
+  revealStart = performance.now();
+  revealView = null;
+  menuOpen = false;
+  synth.reveal();
+  hapticReveal();
+  lastSig = "";
+}
+
+function closeReveal(): void {
+  if (!reveal) return;
+  reveal = null;
+  revealStart = 0;
+  revealView = null;
+  lastSig = "";
+}
+
+function boardHtml(fresh = false): string {
   const s = game.session!;
   const daily = game.mode === "daily";
   const label = daily ? `DAILY ${game.dailyIndex + 1} / 5` : `LEVEL ${game.level}`;
   const showRetry = s.phase === "failed" && game.anim.done;
   const launchLabel = showRetry ? "Retry" : "Launch";
   const fail = s.phase === "failed" && s.failReason ? failCard(s.failReason) : "";
+  const hintDisabled = s.phase !== "idle" || (s.hintUsed && s.strongHintUsed);
+  const hintLabel = s.hintUsed && !s.strongHintUsed ? "More" : "Hint";
   const par = s.puzzle.par;
   const nodes = s.puzzle.cells.filter((c) => c.required).length;
-  return `<div class="shell">
+  return `<div class="shell${fresh ? " enter" : ""}">
     <div class="hud">
       <button class="icon-btn" data-act="undo" ${s.phase !== "idle" ? "disabled" : ""} aria-label="Undo">${ICON_UNDO}<span>Undo</span></button>
       <div class="center-meta">
@@ -174,26 +265,28 @@ function boardHtml(): string {
         <div class="par">MOVES <b>${s.rotations}</b> · PAR <b>${par}</b></div>
         <div class="par-sub">COLLECT ${nodes} · 3★ ≤ ${par}</div>
       </div>
-      <button class="icon-btn" data-act="hint" ${s.hintUsed || s.phase !== "idle" ? "disabled" : ""} aria-label="Hint">${ICON_HINT}<span>Hint</span></button>
+      <button class="icon-btn" data-act="hint" ${hintDisabled ? "disabled" : ""} aria-label="${hintLabel}">${ICON_HINT}<span>${hintLabel}</span></button>
       <button class="icon-btn" data-act="mute" aria-label="${game.save.muted ? "Unmute" : "Mute"}">${game.save.muted ? ICON_UNMUTE : ICON_MUTE}<span>Mute</span></button>
     </div>
     <div class="board-wrap">
       <canvas id="board"></canvas>
       ${tutorialPrompt()}
     </div>
+    ${s.hint ? `<div class="hint-banner" role="status">${s.hint.message}</div>` : ""}
     <div class="dock">
       ${fail}
       <div class="reset-row">
-        <button class="reset" data-act="home">Home</button>
-        <button class="reset" data-act="reset">Reset</button>
+        <button class="reset menu-btn" data-act="menu" aria-label="Open level menu">${ICON_MENU}<span>Menu</span></button>
       </div>
       <button class="launch${showRetry ? " retry" : ""}" data-act="launch">${launchLabel}</button>
     </div>
     <div class="sr-only" role="status" aria-live="polite">${statusText()}</div>
+    ${boardMenuHtml()}
+    ${revealModalHtml()}
   </div>`;
 }
 
-function winHtml(): string {
+function winHtml(fresh = false): string {
   const s = game.session!;
   const stars = calculateStars(s.rotations, s.puzzle.par);
   const daily = game.mode === "daily";
@@ -202,7 +295,7 @@ function winHtml(): string {
   const extra = complete ? `<div class="win-meta">STREAK ${game.save.streak}</div>` : "";
   const next = daily ? (complete ? "Home" : "Next Daily") : "Next";
   return `<div class="shell" style="position:relative">
-    ${boardHtml()}
+    ${boardHtml(fresh)}
     <div class="overlay">
       <div class="win-card">
         <h2>${title}</h2>
@@ -269,9 +362,42 @@ function paintHero(): void {
   ctx.stroke();
 }
 
+let lastSweepAt = 0;
+
+function paintReveal(): void {
+  if (!reveal) return;
+  const canvas = app.querySelector<HTMLCanvasElement>("#reveal-canvas");
+  if (!canvas) return;
+  const css = Math.max(200, Math.min(320, Math.floor(window.innerWidth * 0.72)));
+  if (!revealView || revealView.canvas !== canvas) revealView = attachBoard(canvas, css);
+  layoutBoard(revealView, reveal.puzzle.size, css);
+  const path = reveal.preview.path;
+  const lit = new Set(path.map((p) => `${p.row},${p.col}`));
+  const now = performance.now();
+  const progress = reduced() ? 1 : Math.max(0, Math.min(1, (now - revealStart) / REVEAL_MS));
+  if (progress < 1 && now - lastSweepAt > 110) {
+    lastSweepAt = now;
+    synth.sweep();
+  }
+  drawBoard(revealView, {
+    puzzle: reveal.puzzle,
+    cells: reveal.preview.cells,
+    token: null,
+    lit,
+    winFlash: 0,
+    failDim: 0,
+    route: path,
+    routeProgress: progress,
+    selected: null,
+    reduced: reduced(),
+    now,
+  });
+}
+
 function paint(): void {
   if (!view || !game.session) {
-    paintHero();
+    if (game.screen === "home") paintHero();
+    paintReveal();
     return;
   }
   layoutBoard(view, game.session.puzzle.size, boardCss);
@@ -316,6 +442,7 @@ function paint(): void {
     reduced: reduced(),
     now: performance.now(),
   });
+  paintReveal();
 }
 
 let lastScreen = "";
@@ -331,11 +458,16 @@ function signature(g: Game): string {
     s?.phase,
     s?.rotations,
     s?.hintUsed,
-    s?.hint ? `${s.hint.row},${s.hint.col}` : "",
+    s?.strongHintUsed,
+    s?.hint ? `${s.hint.row},${s.hint.col},${s.hint.message}` : "",
     s?.failReason,
     g.save.muted,
     g.save.streak,
     selectedPack,
+    levelsOpen ? 1 : 0,
+    solutionsMode ? 1 : 0,
+    menuOpen ? 1 : 0,
+    reveal ? `${reveal.puzzle.id}:${reveal.label}` : "",
     Object.keys(g.save.solved).length,
   ].join(":");
 }
@@ -346,12 +478,16 @@ function render(): void {
   if (screenChange && game.screen === "home") {
     selectedPack = packForLevel(nextUnsolved(game.save.solved, 1)).id;
     view = null;
+    levelsOpen = false;
+    solutionsMode = false;
+    menuOpen = false;
   }
+  if (screenChange && game.screen === "board") menuOpen = false;
   if (sig !== lastSig) {
     lastSig = sig;
-    if (game.screen === "home") app.innerHTML = homeHtml();
-    else if (game.screen === "win") app.innerHTML = winHtml();
-    else app.innerHTML = boardHtml();
+    if (game.screen === "home") app.innerHTML = homeHtml(screenChange);
+    else if (game.screen === "win") app.innerHTML = winHtml(screenChange);
+    else app.innerHTML = boardHtml(screenChange);
     lastScreen = game.screen;
     if (game.screen !== "home") bindBoard();
   } else if (screenChange) {
@@ -364,19 +500,67 @@ app.addEventListener("click", (e) => {
   const t = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
   if (!t) return;
   const act = t.dataset.act;
-  if (act === "play") openBoard(game, "story");
-  else if (act === "daily") openBoard(game, "daily");
-  else if (act === "tab") {
+  if (act === "menu-hold" || act === "reveal-hold") return;
+  if (act === "play") {
+    reveal = null;
+    menuOpen = false;
+    synth.tap();
+    openBoard(game, "story");
+  } else if (act === "daily") {
+    reveal = null;
+    menuOpen = false;
+    synth.tap();
+    openBoard(game, "daily");
+  } else if (act === "tab") {
+    synth.tap();
+    hapticTap();
     selectedPack = t.dataset.pack ?? selectedPack;
-  } else if (act === "level") openBoard(game, "story", Number(t.dataset.level));
-  else if (act === "undo") doUndo(game);
+  } else if (act === "toggle-levels") {
+    synth.tap();
+    hapticTap();
+    levelsOpen = !levelsOpen;
+  } else if (act === "mode-play") {
+    synth.tap();
+    hapticTap();
+    solutionsMode = false;
+  } else if (act === "mode-solutions") {
+    synth.tap();
+    hapticTap();
+    solutionsMode = true;
+  } else if (act === "level") {
+    synth.tap();
+    openBoard(game, "story", Number(t.dataset.level));
+  } else if (act === "preview") {
+    hapticTap();
+    const lv = Number(t.dataset.level);
+    openReveal(getLevel(lv), `LEVEL ${lv}`);
+  } else if (act === "menu") {
+    synth.tap();
+    hapticTap();
+    menuOpen = true;
+  } else if (act === "menu-close") {
+    menuOpen = false;
+  } else if (act === "reveal") {
+    const p = game.session?.puzzle;
+    if (p) openReveal(p, game.mode === "daily" ? `DAILY ${game.dailyIndex + 1}` : `LEVEL ${game.level}`);
+  } else if (act === "reveal-close") {
+    closeReveal();
+  } else if (act === "undo") doUndo(game);
   else if (act === "hint") doHint(game);
-  else if (act === "mute") toggleMute(game);
-  else if (act === "reset") doReset(game);
-  else if (act === "launch") doLaunch(game);
+  else if (act === "mute") {
+    synth.tap();
+    toggleMute(game);
+  } else if (act === "reset") {
+    menuOpen = false;
+    doReset(game);
+  } else if (act === "launch") doLaunch(game);
   else if (act === "next") nextAfterWin(game);
   else if (act === "retry-stars") retryForStars(game);
-  else if (act === "home") goHome(game);
+  else if (act === "home") {
+    reveal = null;
+    menuOpen = false;
+    goHome(game);
+  }
   lastSig = "";
   render();
 });
@@ -392,6 +576,19 @@ function moveCursor(game: Game, dr: number, dc: number): void {
 }
 
 window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (reveal) {
+      closeReveal();
+      render();
+      return;
+    }
+    if (menuOpen) {
+      menuOpen = false;
+      lastSig = "";
+      render();
+      return;
+    }
+  }
   if (!game.session || game.screen === "home") return;
   if (e.key === "Enter") {
     e.preventDefault();
@@ -438,8 +635,34 @@ function loop(now: number): void {
 render();
 requestAnimationFrame(loop);
 
-if ("serviceWorker" in navigator) {
+const nativeShell =
+  typeof window !== "undefined" &&
+  ("Capacitor" in window || (window as unknown as { capacitor?: unknown }).capacitor !== undefined);
+if (!nativeShell && "serviceWorker" in navigator) {
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => undefined);
+  });
+}
+
+if (nativeShell) {
+  void App.addListener("backButton", () => {
+    if (reveal) {
+      closeReveal();
+      render();
+      return;
+    }
+    if (menuOpen) {
+      menuOpen = false;
+      lastSig = "";
+      render();
+      return;
+    }
+    if (game.screen !== "home") {
+      goHome(game);
+      lastSig = "";
+      render();
+      return;
+    }
+    void App.exitApp();
   });
 }

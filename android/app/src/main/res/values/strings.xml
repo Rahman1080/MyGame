@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GLOWTRAIL</string>
+    <string name="title_activity_main">GLOWTRAIL</string>
+    <string name="package_name">com.glowtrail.app</string>
+    <string name="custom_url_scheme">com.glowtrail.app</string>
+</resources>

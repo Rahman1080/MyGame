@@ -29,6 +29,10 @@ export interface DrawState {
   ghost?: { row: number; col: number } | null;
   hint?: { row: number; col: number } | null;
   selected?: { row: number; col: number } | null;
+  /** Read-only winning route, drawn as a glowing trail. */
+  route?: SimStep[] | null;
+  /** Sweep progress for the route, 0..1. Defaults to fully drawn. */
+  routeProgress?: number;
   reduced: boolean;
   now: number;
 }
@@ -298,6 +302,47 @@ function drawGrid(view: BoardView): void {
   }
 }
 
+function drawRoute(
+  view: BoardView,
+  route: SimStep[],
+  progress: number,
+): void {
+  if (route.length < 2) return;
+  const { ctx } = view;
+  const edges = route.length - 1;
+  const limit = Math.max(0, Math.min(1, progress)) * edges;
+  const first = center(view, route[0]!.row, route[0]!.col);
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.shadowColor = PALETTE.cyan;
+  ctx.shadowBlur = 14;
+  ctx.strokeStyle = withAlpha(PALETTE.cyan, 0.9);
+  ctx.lineWidth = Math.max(3, view.cell * 0.11);
+  ctx.beginPath();
+  ctx.moveTo(first.x, first.y);
+  for (let i = 0; i < edges; i += 1) {
+    const t = Math.max(0, Math.min(1, limit - i));
+    if (t <= 0) break;
+    const a = route[i]!;
+    const b = route[i + 1]!;
+    const ca = center(view, a.row, a.col);
+    const cb = center(view, b.row, b.col);
+    const adjacent = Math.abs(a.row - b.row) + Math.abs(a.col - b.col) === 1;
+    if (!adjacent) {
+      ctx.moveTo(ca.x, ca.y);
+      ctx.lineTo(cb.x, cb.y);
+    } else if (t < 1) {
+      ctx.lineTo(ca.x + (cb.x - ca.x) * t, ca.y + (cb.y - ca.y) * t);
+      break;
+    } else {
+      ctx.lineTo(cb.x, cb.y);
+    }
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 export function drawBoard(view: BoardView, state: DrawState): void {
   const { ctx } = view;
   const w = view.canvas.clientWidth;
@@ -406,6 +451,10 @@ export function drawBoard(view: BoardView, state: DrawState): void {
       ctx.restore();
       drawLock(ctx, x, y, view.cell);
     }
+  }
+
+  if (state.route && state.route.length > 1) {
+    drawRoute(view, state.route, state.routeProgress ?? 1);
   }
 
   if (state.ghost) {
