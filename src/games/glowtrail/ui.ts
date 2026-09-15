@@ -30,8 +30,15 @@ import {
 } from "../../ui/icons";
 import { getLevel, isLevelUnlocked, levelId, nextUnsolved, packForLevel, PACKS, TOTAL_LEVELS } from "../../levels/packs";
 import { difficultyRating } from "../../gen/difficulty";
+import {
+  glowtrailClock,
+  glowtrailTierLabel,
+  glowtrailTimeLeftMs,
+  glowtrailTimeLimitMs,
+} from "./levelRules";
+import { hintGate } from "../../platform/levels";
 import { synth } from "../../audio/synth";
-import { hapticReveal, hapticTap } from "../../audio/haptics";
+import { hapticFail, hapticReveal, hapticTap } from "../../audio/haptics";
 import { setBackHandler } from "../../platform/router";
 import type { GameContext } from "../../platform/types";
 import type { SaveData } from "../../save/schema";
@@ -59,6 +66,11 @@ let lastScreen = "";
 let lastSig = "";
 let lastSweepAt = 0;
 
+let timerLimitMs = 0;
+let timerElapsed = 0;
+let timedUp = false;
+let sessionRef: Game["session"] = null;
+
 function reduced(): boolean {
   if (ctx) return ctx.settings.reduceMotion();
   return game.reduced;
@@ -71,6 +83,30 @@ function toggleMute(): void {
   ctx.audio.setMuted(next);
   game.save.muted = next;
   ctx.updateSave(game.save);
+}
+
+function syncTimer(): void {
+  if (game.session === sessionRef) return;
+  sessionRef = game.session;
+  timedUp = false;
+  timerElapsed = 0;
+  timerLimitMs = game.session && game.mode === "story" ? glowtrailTimeLimitMs(game.level) : 0;
+}
+
+function resetTimer(): void {
+  timedUp = false;
+  timerElapsed = 0;
+}
+
+function timerHtml(): string {
+  if (timerLimitMs <= 0) return "";
+  const left = glowtrailTimeLeftMs(timerLimitMs, timerElapsed);
+  const low = left <= timerLimitMs * 0.25;
+  const pct = Math.max(0, Math.min(100, (left / timerLimitMs) * 100));
+  return `<div class="gt-timer-wrap"><div class="gt-timer${low ? " low" : ""}" role="timer" aria-label="Time left ${glowtrailClock(left)}">
+    <span class="gt-timer-bar"><span style="width:${pct.toFixed(1)}%"></span></span>
+    <span class="gt-timer-clock">${glowtrailClock(left)}</span>
+  </div></div>`;
 }
 
 function diffDots(puzzle: Puzzle): string {
@@ -271,32 +307,40 @@ function boardHtml(fresh = false): string {
   const showRetry = s.phase === "failed" && game.anim.done;
   const launchLabel = showRetry ? "Retry" : "Launch";
   const fail = s.phase === "failed" && s.failReason ? failCard(s.failReason) : "";
-  const hintDisabled = s.phase !== "idle" || (s.hintUsed && s.strongHintUsed);
+  const hintDisabled = s.phase !== "idle" || timedUp || (s.hintUsed && s.strongHintUsed);
   const hintLabel = s.hintUsed && !s.strongHintUsed ? "More" : "Hint";
   const par = s.puzzle.par;
   const nodes = s.puzzle.cells.filter((c) => c.required).length;
+  const tierChip = daily ? "" : `<span class="gt-tier-chip">${glowtrailTierLabel(game.level)}</span>`;
+  const timeCard = timedUp
+    ? `<div class="fail-card"><b>Time up</b><span>The clock beat the trail.</span></div>`
+    : "";
+  const launchBtn = timedUp
+    ? `<button class="launch retry" data-act="time-retry">Try again</button>`
+    : `<button class="launch${showRetry ? " retry" : ""}" data-act="launch">${launchLabel}</button>`;
   return `<div class="shell${fresh ? " enter" : ""}">
     <div class="hud">
-      <button class="icon-btn" data-act="undo" ${s.phase !== "idle" ? "disabled" : ""} aria-label="Undo">${ICON_UNDO}<span>Undo</span></button>
+      <button class="icon-btn" data-act="undo" ${s.phase !== "idle" || timedUp ? "disabled" : ""} aria-label="Undo">${ICON_UNDO}<span>Undo</span></button>
       <div class="center-meta">
-        <div class="lvl">${label}<span class="diff-dots" aria-label="Difficulty">${diffDots(s.puzzle)}</span></div>
+        <div class="lvl">${label}${tierChip}<span class="diff-dots" aria-label="Difficulty">${diffDots(s.puzzle)}</span></div>
         <div class="par">MOVES <b>${s.rotations}</b> · PAR <b>${par}</b></div>
         <div class="par-sub">COLLECT ${nodes} · 3★ ≤ ${par}</div>
       </div>
       <button class="icon-btn" data-act="hint" ${hintDisabled ? "disabled" : ""} aria-label="${hintLabel}">${ICON_HINT}<span>${hintLabel}</span></button>
       <button class="icon-btn" data-act="mute" aria-label="${game.save.muted ? "Unmute" : "Mute"}">${game.save.muted ? ICON_UNMUTE : ICON_MUTE}<span>Mute</span></button>
     </div>
+    ${timerHtml()}
     <div class="board-wrap">
       <canvas id="board"></canvas>
       ${tutorialPrompt()}
     </div>
     ${s.hint ? `<div class="hint-banner" role="status">${s.hint.message}</div>` : ""}
     <div class="dock">
-      ${fail}
+      ${timeCard || fail}
       <div class="reset-row">
         <button class="reset menu-btn" data-act="menu" aria-label="Open level menu">${ICON_MENU}<span>Menu</span></button>
       </div>
-      <button class="launch${showRetry ? " retry" : ""}" data-act="launch">${launchLabel}</button>
+      ${launchBtn}
     </div>
     <div class="sr-only" role="status" aria-live="polite">${statusText()}</div>
     ${boardMenuHtml()}
@@ -410,7 +454,20 @@ function paintReveal(): void {
   });
 }
 
+function paintTimer(): void {
+  const bar = app.querySelector<HTMLElement>(".gt-timer-bar > span");
+  const clock = app.querySelector<HTMLElement>(".gt-timer-clock");
+  const wrap = app.querySelector<HTMLElement>(".gt-timer");
+  if (!bar || !clock || !wrap || timerLimitMs <= 0) return;
+  const left = glowtrailTimeLeftMs(timerLimitMs, timerElapsed);
+  const pct = Math.max(0, Math.min(100, (left / timerLimitMs) * 100));
+  bar.style.width = `${pct.toFixed(1)}%`;
+  clock.textContent = glowtrailClock(left);
+  wrap.classList.toggle("low", left <= timerLimitMs * 0.25);
+}
+
 function paint(): void {
+  paintTimer();
   if (!view || !game.session) {
     if (game.screen === "home") paintHero();
     paintReveal();
@@ -480,6 +537,7 @@ function signature(g: Game): string {
     levelsOpen ? 1 : 0,
     solutionsMode ? 1 : 0,
     menuOpen ? 1 : 0,
+    timedUp ? 1 : 0,
     reveal ? `${reveal.puzzle.id}:${reveal.label}` : "",
     Object.keys(g.save.solved).length,
   ].join(":");
@@ -507,6 +565,18 @@ function render(): void {
     lastScreen = game.screen;
   }
   paint();
+}
+
+async function requestHintAction(): Promise<void> {
+  if (!ctx || timedUp) return;
+  if (ctx.ads.enabled) {
+    const granted = await ctx.ads.rewarded().show();
+    if (!hintGate(ctx.ads.enabled, granted)) return;
+  }
+  doHint(game);
+  ctx.analytics.track("hint_used", { game: "glowtrail" });
+  lastSig = "";
+  render();
 }
 
 function onClick(e: MouseEvent): void {
@@ -565,16 +635,19 @@ function onClick(e: MouseEvent): void {
   } else if (act === "reveal-close") {
     closeReveal();
   } else if (act === "undo") doUndo(game);
-  else if (act === "hint") {
-    doHint(game);
-    ctx?.analytics.track("hint_used", { game: "glowtrail" });
-  } else if (act === "mute") {
+  else if (act === "hint") void requestHintAction();
+  else if (act === "mute") {
     synth.tap();
     toggleMute();
   } else if (act === "reset") {
     menuOpen = false;
     doReset(game);
-  } else if (act === "launch") doLaunch(game);
+  } else if (act === "launch") {
+    if (!timedUp) doLaunch(game);
+  } else if (act === "time-retry") {
+    resetTimer();
+    doReset(game);
+  }
   else if (act === "next") nextAfterWin(game);
   else if (act === "retry-stars") retryForStars(game);
   else if (act === "home") {
@@ -642,11 +715,28 @@ function onKeydown(e: KeyboardEvent): void {
   render();
 }
 
+function advanceTimer(dt: number): void {
+  if (timerLimitMs <= 0 || timedUp) return;
+  if (game.screen !== "board" || reveal || menuOpen) return;
+  if (!game.session || game.session.phase !== "idle" || !game.anim.done) return;
+  timerElapsed += dt;
+  if (timerElapsed >= timerLimitMs) {
+    timerElapsed = timerLimitMs;
+    timedUp = true;
+    synth.fail();
+    hapticFail();
+    ctx?.analytics.track("game_failed", { game: "glowtrail", reason: "timeout" });
+    lastSig = "";
+  }
+}
+
 function loop(now: number): void {
   const dt = Math.min(48, now - last);
   last = now;
+  syncTimer();
   const phase = game.session?.phase;
   tick(game, dt);
+  advanceTimer(dt);
   if (game.session?.phase !== phase) lastSig = "";
   render();
   rafId = requestAnimationFrame(loop);
@@ -695,6 +785,10 @@ export function mountGlowtrail(root: HTMLElement, context: GameContext): void {
   solutionsMode = false;
   lastScreen = "";
   lastSig = "";
+  timerLimitMs = 0;
+  timerElapsed = 0;
+  timedUp = false;
+  sessionRef = null;
   ac = new AbortController();
   const { signal } = ac;
   app.addEventListener("click", (e) => onClick(e as MouseEvent), { signal });
@@ -715,5 +809,9 @@ export function unmountGlowtrail(): void {
   reveal = null;
   revealView = null;
   menuOpen = false;
+  timerLimitMs = 0;
+  timerElapsed = 0;
+  timedUp = false;
+  sessionRef = null;
   app.innerHTML = "";
 }

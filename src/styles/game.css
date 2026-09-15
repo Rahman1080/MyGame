@@ -1482,4 +1482,56 @@ button:focus-visible,
   .glyph-key { transition: none; }
   .glyph-timer-bar span { transition: none; }
   .glyph-level-tile:active { transform: none; }
+  .gt-timer-bar span { transition: none; }
+}
+
+.gt-tier-chip {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--cyan);
+  color: var(--cyan);
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  vertical-align: middle;
+}
+
+.gt-timer-wrap {
+  z-index: 1;
+  width: 100%;
+  max-width: 330px;
+  margin: 6px auto 0;
+}
+
+.gt-timer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gt-timer-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: #131a25;
+  overflow: hidden;
+}
+
+.gt-timer-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--cyan);
+  transition: width 0.2s linear;
+}
+
+.gt-timer.low .gt-timer-bar > span { background: var(--magenta); }
+.gt-timer.low .gt-timer-clock { color: var(--magenta); }
+
+.gt-timer-clock {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  min-width: 34px;
+  text-align: right;
 }
