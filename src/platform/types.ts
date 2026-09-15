@@ -1,9 +1,9 @@
 import type { Rng } from "../gen/seededRng";
 import type { SaveV2 } from "../save/schema";
 
-export type GameId = "glowtrail" | "fusion" | "prism" | "glyph" | "blocks";
+export type GameId = "glowtrail" | "fusion" | "prism" | "glyph" | "blocks" | "arrows";
 
-/** Union of the five per-game save slices. */
+/** Union of the six per-game save slices. */
 export type AnyGameSave = SaveV2["games"][GameId];
 
 export interface GameMeta {

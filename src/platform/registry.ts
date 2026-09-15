@@ -66,6 +66,18 @@ export const GAMES: GameDescriptor[] = [
     },
     load: () => import("../games/blocks"),
   },
+  {
+    meta: {
+      id: "arrows",
+      name: "NEON ARROWS",
+      tagline: "Steer the beam",
+      icon: "arrows",
+      accent: "#4FC3FF",
+      status: "ready",
+      hasGauntlet: false,
+    },
+    load: () => import("../games/arrows"),
+  },
 ];
 
 export function findGame(id: string): GameDescriptor | undefined {

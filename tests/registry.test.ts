@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { findGame, GAMES, isGameId } from "../src/platform/registry";
 
 describe("game registry", () => {
-  it("exposes the five arcade game ids in display order", () => {
-    expect(GAMES.map((g) => g.meta.id)).toEqual(["glowtrail", "fusion", "prism", "glyph", "blocks"]);
+  it("exposes the six arcade game ids in display order", () => {
+    expect(GAMES.map((g) => g.meta.id)).toEqual(["glowtrail", "fusion", "prism", "glyph", "blocks", "arrows"]);
   });
 
   it("every descriptor has display metadata", () => {
@@ -59,5 +59,17 @@ describe("game registry", () => {
     const game = (await desc!.load!()).default;
     expect(game.meta.id).toBe("blocks");
     expect(game.daily("daily:blocks:2026-09-15")).toEqual({ date: "2026-09-15", seed: "daily:blocks:2026-09-15" });
+  });
+
+  it("loads the ready arrows adapter with its own daily mode", async () => {
+    const desc = findGame("arrows");
+    expect(desc?.meta.status).toBe("ready");
+    expect(desc?.meta.name).toBe("NEON ARROWS");
+    expect(desc?.meta.tagline).toBe("Steer the beam");
+    expect(desc?.meta.hasGauntlet).toBe(false);
+    expect(desc?.load).toBeTypeOf("function");
+    const game = (await desc!.load!()).default;
+    expect(game.meta.id).toBe("arrows");
+    expect(game.daily("daily:arrows:2026-09-15")).toEqual({ date: "2026-09-15", seed: "daily:arrows:2026-09-15" });
   });
 });
