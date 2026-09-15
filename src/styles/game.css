@@ -908,6 +908,7 @@ button:focus-visible,
 
 .fusion-choose {
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -915,7 +916,12 @@ button:focus-visible,
   position: relative;
   z-index: 1;
   padding-bottom: 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
 }
+
+.fusion-choose::-webkit-scrollbar { display: none; }
 
 .fusion-blurb {
   font-size: 13px;
@@ -1188,7 +1194,14 @@ button:focus-visible,
   gap: 10px;
   justify-content: flex-start;
   padding-top: 12px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
+
+.glyph-shell::-webkit-scrollbar { display: none; }
 
 .glyph-top {
   display: flex;
@@ -1244,11 +1257,12 @@ button:focus-visible,
 .glyph-board {
   z-index: 1;
   width: 100%;
-  max-width: 330px;
+  max-width: clamp(186px, calc((100dvh - 430px) * 0.84), 330px);
   margin: 2px auto 0;
   display: flex;
   flex-direction: column;
   gap: 6px;
+  flex: 0 0 auto;
 }
 
 .glyph-row { display: flex; gap: 6px; }
@@ -1433,6 +1447,7 @@ button:focus-visible,
 .glyph-tier-tag { font-size: 10px; letter-spacing: 0.16em; color: var(--dim); }
 
 .glyph-timer-wrap { z-index: 1; width: 100%; max-width: 330px; margin: 0 auto; }
+.glyph-timer-wrap:empty { display: none; }
 .glyph-timer { display: flex; align-items: center; gap: 8px; }
 .glyph-timer-bar { flex: 1; height: 6px; border-radius: 999px; background: #131a25; overflow: hidden; }
 .glyph-timer-bar span { display: block; height: 100%; background: var(--cyan); transition: width 0.2s linear; }
@@ -1441,6 +1456,7 @@ button:focus-visible,
 .glyph-timer-clock { font-size: 11px; letter-spacing: 0.1em; color: var(--muted); min-width: 34px; text-align: right; }
 
 .glyph-hint-wrap { z-index: 1; min-height: 0; }
+.glyph-hint-wrap:empty { display: none; }
 .glyph-hint-row { display: flex; align-items: center; gap: 6px; justify-content: center; flex-wrap: wrap; }
 .glyph-hint-label { font-size: 9px; letter-spacing: 0.14em; color: var(--cyan); }
 .glyph-hint-chip {
@@ -1595,3 +1611,18 @@ button:focus-visible,
 }
 
 .fusion-timer.low { color: var(--magenta); }
+
+@media (max-height: 720px) {
+  .glyph-shell { gap: 7px; padding-top: 8px; }
+  .glyph-banner { min-height: 22px; padding: 3px 10px; }
+  .glyph-keyboard { gap: 5px; padding-bottom: 4px; }
+  .glyph-key { min-height: 40px; font-size: 12px; }
+  .glyph-status { min-height: 14px; }
+  .fusion-choose { justify-content: flex-start; }
+}
+
+@media (max-height: 600px) {
+  .glyph-shell { gap: 5px; }
+  .glyph-key { min-height: 36px; }
+  .glyph-tile { font-size: clamp(15px, 5vw, 20px); }
+}
