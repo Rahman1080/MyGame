@@ -364,7 +364,7 @@ describe("prism save slice", () => {
     const mem = new Mem();
     const svc = createSaveService(mem);
     const held = svc.get().games.prism;
-    const patch: PrismSave = { solved: ["prism-1", "prism-2"], bestMoves: { "prism-1": 12 } };
+    const patch: PrismSave = { solved: ["prism-1", "prism-2"], bestMoves: { "prism-1": 12 }, levels: {} };
     svc.mutate((draft) => {
       Object.assign(draft.games.prism, patch);
     });

@@ -1071,8 +1071,19 @@ button:focus-visible,
 
 .prism-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
+}
+
+.prism-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.prism-tier-name {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--dim);
 }
 
 .prism-tile {
@@ -1092,6 +1103,9 @@ button:focus-visible,
   border-color: rgba(255, 200, 87, 0.6);
   box-shadow: 0 0 16px -6px var(--amber);
 }
+.prism-tile.locked { opacity: 0.5; color: var(--dim); }
+.prism-tile-lock { display: flex; }
+.prism-tile-lock svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
 .prism-tile-n {
   font-family: Orbitron, sans-serif;
   font-weight: 700;
@@ -1103,6 +1117,21 @@ button:focus-visible,
   color: var(--muted);
   min-height: 11px;
 }
+.prism-tile-stars { display: flex; gap: 2px; }
+.prism-tile-stars i { width: 4px; height: 4px; border-radius: 1px; background: #24303f; }
+.prism-tile-stars i.on { background: var(--amber); }
+
+.prism-timer {
+  margin-top: 3px;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.prism-timer.low { color: var(--magenta); }
+.prism-timer:empty { display: none; }
+
+.prism-practice { font-size: 10px; letter-spacing: 0.14em; color: var(--amber); margin-bottom: 8px; }
+.prism-practice.reward { color: var(--lime); }
 
 .prism-stage {
   flex: 1;
