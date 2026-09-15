@@ -1,132 +1,126 @@
-import type { ArrowsCell, ArrowsMode, ArrowsState } from "./logic";
-import { dirName, traceAll, traceCheckpointsMet } from "./logic";
+import type { ArrowsMode, ArrowsState } from "./logic";
+import { bodyCells, dirName, isLocked, movableIndices, occupiedAt, stepCell } from "./logic";
 
 const ICON_BACK = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" /></svg>`;
 const ICON_RESTART = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.4 5.7" /><path d="M20 5v6h-6" /></svg>`;
 const ICON_HINT = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9.5 9a2.5 2.5 0 1 1 3.6 2.2c-.8.5-1.1 1-1.1 1.8v.4" /><path d="M12 17.2v.1" /></svg>`;
-const ARROW_GLYPH = `<svg class="nar-arrow" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 4l6 8h-3.4v8h-5.2v-8H6z" /></svg>`;
-const EXIT_GLYPH = `<svg class="nar-exit" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3l7 9-7 9-7-9z" /><path d="M12 7.5l3.6 4.5L12 16.5 8.4 12z" /></svg>`;
+const ICON_UNDO = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M9 7H5v-4" /><path d="M5 7a7 7 0 1 1 2 5" /></svg>`;
+const ARROW_TIP = `<svg class="nar-tip" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 3.5l7.5 13H4.5z" /></svg>`;
+const LOCK_MARK = `<svg class="nar-lock" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><rect x="5" y="10.5" width="14" height="9.5" rx="2" /><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5" /></svg>`;
 
 export interface BoardView {
   focus?: number | null;
   hint?: number | null;
+  /** Arrow currently being pressed, for lane preview. */
+  press?: number | null;
 }
 
-function cellClasses(cell: ArrowsCell, onPath: boolean): string[] {
-  const parts = ["nar-cell", cell.kind];
-  if (onPath) parts.push("on");
-  if (cell.locked) parts.push("locked");
-  return parts;
+export interface LanePreview {
+  cells: number[];
+  blocked: boolean;
 }
 
-function cellLabel(state: ArrowsState, index: number, cell: ArrowsCell): string {
+/** Cells in front of an arrow until the edge or the first obstruction. */
+export function laneCells(state: ArrowsState, index: number): LanePreview {
+  const arrow = state.arrows[index];
+  if (!arrow || (state.bodies[index] ?? 0) <= 0) return { cells: [], blocked: false };
+  const occupied = occupiedAt(state.size, state.arrows, state.heads, state.bodies, index);
+  const cells: number[] = [];
+  let cell = state.heads[index]!;
+  for (;;) {
+    const next = stepCell(state.size, cell, arrow.dir);
+    if (next < 0) return { cells, blocked: false };
+    cells.push(next);
+    if (occupied.has(next)) return { cells, blocked: true };
+    cell = next;
+  }
+}
+
+function cellLabel(state: ArrowsState, index: number): string {
   const row = Math.floor(index / state.size) + 1;
   const col = (index % state.size) + 1;
-  const source = state.sources.find((s) => s.cell === index);
-  if (source) return `Energy source at row ${row} column ${col}, launching ${dirName(source.dir)}`;
-  if (cell.kind === "wall") return `Wall at row ${row} column ${col}`;
-  if (cell.kind === "exit") return `Exit portal at row ${row} column ${col}`;
-  if (cell.kind === "checkpoint") return `Checkpoint at row ${row} column ${col}, locked pointing ${dirName(cell.dir)}`;
-  if (cell.kind === "arrow") {
-    return `Arrow at row ${row} column ${col}, pointing ${dirName(cell.dir)}${cell.locked ? ", locked" : ", activate to rotate"}`;
-  }
-  return `Empty at row ${row} column ${col}`;
+  const arrow = state.arrows[index];
+  if (!arrow || (state.bodies[index] ?? 0) <= 0) return `Empty at row ${row} column ${col}`;
+  const lock = isLocked(state, index) ? ", locked" : "";
+  const long = arrow.length > 1 ? `, ${arrow.length} cells long` : "";
+  return `Arrow at row ${row} column ${col}, pointing ${dirName(arrow.dir)}${long}${lock}, tap to launch`;
 }
 
 export function boardHtml(state: ArrowsState, view: BoardView = {}): string {
-  const traces = traceAll(state);
-  const onPath = new Set<number>();
-  const reached = new Set<number>();
-  for (const trace of traces) {
-    for (const cell of trace.path) onPath.add(cell);
-    if (trace.status === "exit") {
-      const last = trace.path[trace.path.length - 1];
-      if (last !== undefined) reached.add(last);
-    }
+  const moves = new Set(movableIndices(state.size, state.arrows, state.heads, state.bodies));
+  const occupied = new Map<number, { arrow: number; offset: number }>();
+  for (let i = 0; i < state.arrows.length; i += 1) {
+    const body = state.bodies[i] ?? 0;
+    if (body <= 0) continue;
+    const arrow = state.arrows[i]!;
+    bodyCells(state.size, arrow.dir, state.heads[i]!, body).forEach((cell, offset) => {
+      occupied.set(cell, { arrow: i, offset });
+    });
   }
+
+  const lane = view.press != null ? laneCells(state, view.press) : null;
+  const laneSet = new Set(lane?.cells ?? []);
+  const laneBlock = lane?.blocked ? lane.cells[lane.cells.length - 1] : -1;
+
   const rows: string[] = [];
   for (let row = 0; row < state.size; row += 1) {
     const cells: string[] = [];
     for (let col = 0; col < state.size; col += 1) {
       const index = row * state.size + col;
-      const cell = state.cells[index];
-      if (!cell) continue;
-      const parts = cellClasses(cell, onPath.has(index));
-      if (index === view.focus) parts.push("focus");
-      if (index === view.hint) parts.push("hint");
-      if (reached.has(index)) parts.push("ok");
-      const isSource = state.sources.some((s) => s.cell === index);
-      if (isSource) parts.push("source");
-      let glyph = "";
-      if (cell.kind === "arrow" || cell.kind === "checkpoint") {
-        glyph = `<span class="nar-glyph d${cell.dir}">${ARROW_GLYPH}</span>`;
-      } else if (cell.kind === "exit") {
-        glyph = `<span class="nar-glyph">${EXIT_GLYPH}</span>`;
-      } else if (isSource) {
-        const source = state.sources.find((s) => s.cell === index);
-        glyph = `<span class="nar-glyph d${source?.dir ?? 0} nar-source-mark">${ARROW_GLYPH}</span>`;
+      const part = occupied.get(index);
+      if (!part) {
+        const classes = ["nar-cell"];
+        if (laneSet.has(index)) classes.push("lane");
+        cells.push(`<div class="${classes.join(" ")}" role="gridcell" data-cell="${index}"></div>`);
+        continue;
       }
-      const interactive = (cell.kind === "arrow" || cell.kind === "checkpoint") && !cell.locked;
-      const tag = interactive ? "button" : "div";
-      const extra = interactive ? ` type="button"` : "";
+      const arrow = state.arrows[part.arrow]!;
+      const locked = isLocked(state, part.arrow);
+      const classes = ["nar-tile", `d${arrow.dir}`];
+      classes.push(part.offset === 0 ? "head" : "tail");
+      if (arrow.length > 1) classes.push("long");
+      if (locked) classes.push("locked");
+      classes.push(moves.has(part.arrow) ? "ready" : "held");
+      if (laneSet.has(index)) classes.push("lane");
+      if (index === laneBlock) classes.push("lane-block");
+      if (view.focus === part.arrow && part.offset === 0) classes.push("focus");
+      if (view.hint === part.arrow) classes.push("hint");
+      const glyph = part.offset === 0 ? ARROW_TIP : "";
+      const lockMark = locked && part.offset === 0 ? LOCK_MARK : "";
       cells.push(
-        `<${tag}${extra} role="gridcell" tabindex="-1" class="${parts.join(" ")}" data-cell="${index}" aria-label="${cellLabel(
+        `<button type="button" role="gridcell" tabindex="-1" class="${classes.join(" ")}" data-arrow="${part.arrow}" data-cell="${index}" aria-label="${cellLabel(
           state,
-          index,
-          cell,
-        )}">${glyph}</${tag}>`,
+          part.arrow,
+        )}">${glyph}${lockMark}</button>`,
       );
     }
     rows.push(`<div role="row" class="nar-row">${cells.join("")}</div>`);
   }
-  return `<div class="nar-board" role="grid" tabindex="0" aria-label="Arrow board, ${state.size} by ${state.size}">${rows.join(
+  const dim = `style="--nar-size:${state.size}"`;
+  return `<div class="nar-board" role="grid" tabindex="0" ${dim} aria-label="Arrow board, ${state.size} by ${state.size}">${rows.join(
     "",
   )}</div>`;
 }
 
-export interface BeamSummary {
-  connected: number;
-  total: number;
-  blocked: number;
-  loop: number;
-  out: number;
-  checkpointsMissing: number;
-}
-
-export function beamSummary(state: ArrowsState): BeamSummary {
-  const traces = traceAll(state);
-  const summary: BeamSummary = { connected: 0, total: traces.length, blocked: 0, loop: 0, out: 0, checkpointsMissing: 0 };
-  for (const trace of traces) {
-    if (trace.status === "exit") {
-      summary.connected += 1;
-      if (!traceCheckpointsMet(state, trace)) summary.checkpointsMissing += 1;
-    } else if (trace.status === "blocked") summary.blocked += 1;
-    else if (trace.status === "loop") summary.loop += 1;
-    else summary.out += 1;
-  }
-  return summary;
+export function remainingArrows(state: ArrowsState): number {
+  return state.bodies.reduce((count, body) => (body > 0 ? count + 1 : count), 0);
 }
 
 export function statusText(state: ArrowsState): string {
-  const summary = beamSummary(state);
-  if (summary.total === 0) return "No energy source on this board.";
-  if (summary.blocked > 0) return "A beam is blocked by a wall.";
-  if (summary.loop > 0) return "A beam is looping back on itself.";
-  if (summary.out > 0) return "A beam is escaping the grid.";
-  if (summary.checkpointsMissing > 0) return "A beam must pass through the checkpoint.";
-  if (summary.connected === summary.total) return "All beams locked in.";
-  return "Route every beam to its portal.";
+  if (state.status === "solved") return "Clean exit. Every arrow escaped.";
+  if (state.status === "stuck") return "Dead end — no arrow can launch.";
+  const moves = movableIndices(state.size, state.arrows, state.heads, state.bodies);
+  if (moves.length === 0) return "Dead end — no arrow can launch.";
+  const ready = moves.length === 1 ? "1 arrow is ready to launch." : `${moves.length} arrows are ready to launch.`;
+  return `${ready} Launch them in the right order.`;
 }
 
 export function hudHtml(state: ArrowsState): string {
-  const summary = beamSummary(state);
-  const left = state.maxRotations === null ? "FREE" : String(Math.max(0, state.maxRotations - state.rotations));
-  const tight = state.maxRotations !== null && state.maxRotations - state.rotations <= 1;
   return `<div class="nar-hud" role="group" aria-label="Run stats">
-    <div class="nar-stat"><span class="k">BEAMS</span><span class="v" data-hud="beams">${summary.connected}<i>/${summary.total}</i></span></div>
-    <div class="nar-stat"><span class="k">ROTATIONS</span><span class="v" data-hud="rotations">${state.rotations}</span></div>
+    <div class="nar-stat"><span class="k">LEFT</span><span class="v" data-hud="left">${remainingArrows(state)}</span></div>
+    <div class="nar-stat"><span class="k">LAUNCHES</span><span class="v" data-hud="launches">${state.launches}</span></div>
     <div class="nar-stat"><span class="k">PAR</span><span class="v" data-hud="par">${state.par}</span></div>
-    <div class="nar-stat${tight ? " hot" : ""}"><span class="k">BUDGET</span><span class="v" data-hud="left">${left}</span></div>
+    <div class="nar-stat"><span class="k">HINTS</span><span class="v" data-hud="hints">${state.hints}</span></div>
   </div>`;
 }
 
@@ -177,9 +171,7 @@ function dailyCardHtml(view: MenuView): string {
 function levelGridHtml(view: MenuView): string {
   const cells = view.levels.map((option) => {
     const locked = !option.unlocked;
-    const label = locked
-      ? `Level ${option.level}, locked`
-      : `Level ${option.level}, ${option.stars} of 3 stars`;
+    const label = locked ? `Level ${option.level}, locked` : `Level ${option.level}, ${option.stars} of 3 stars`;
     return `<button type="button" class="nar-level${locked ? " locked" : ""}${option.stars > 0 ? " won" : ""}" data-level="${
       option.level
     }"${locked ? " disabled" : ""} aria-label="${label}">
@@ -197,7 +189,7 @@ export function menuHtml(view: MenuView, reduced: boolean): string {
       <button class="icon-btn nar-back" data-act="arcade" aria-label="Back to arcade">${ICON_BACK}</button>
       <div class="nar-head">
         <div class="nar-word">NEON ARROWS</div>
-        <span class="nar-badge">STEER THE BEAM</span>
+        <span class="nar-badge">ARROW ESCAPE</span>
       </div>
       <button class="icon-btn nar-help" data-act="help" aria-label="How to play">${ICON_HINT}</button>
     </div>
@@ -224,11 +216,13 @@ export interface ResultView {
   level: number;
   date: string;
   solved: boolean;
+  stuck: boolean;
   score: number;
-  rotations: number;
+  launches: number;
   par: number;
   hints: number;
   stars: number;
+  arrows: number;
   boards: number;
   isBest: boolean;
   ranked: boolean;
@@ -242,12 +236,14 @@ function resultStat(k: string, v: string, accent = ""): string {
 export function resultCardHtml(view: ResultView): string {
   const title =
     view.mode === "daily"
-      ? "DAILY COMPLETE"
+      ? view.solved
+        ? "DAILY COMPLETE"
+        : "DEAD END"
       : view.mode === "endless"
         ? "RUN OVER"
         : view.solved
-          ? "BOARD SOLVED"
-          : "OUT OF ROTATIONS";
+          ? "BOARD CLEARED"
+          : "DEAD END";
   const badge =
     view.mode === "daily"
       ? view.ranked
@@ -259,7 +255,8 @@ export function resultCardHtml(view: ResultView): string {
           : `<div class="nar-practice">${view.boards} BOARDS CLEARED</div>`
         : `<div class="nar-practice reward">LEVEL ${view.level}</div>`;
   const replay = view.mode === "daily" ? "daily-again" : view.mode === "endless" ? "endless" : "level";
-  const next = view.mode === "level" && view.solved && view.hasNext ? `<button class="cta-play" data-act="level-next">NEXT LEVEL</button>` : "";
+  const next =
+    view.mode === "level" && view.solved && view.hasNext ? `<button class="cta-play" data-act="level-next">NEXT LEVEL</button>` : "";
   return `<div class="overlay nar-overlay">
     <div class="win-card nar-card">
       <div class="nar-card-glow" aria-hidden="true"></div>
@@ -268,7 +265,7 @@ export function resultCardHtml(view: ResultView): string {
       <div class="stars" aria-label="${view.stars} of 3 stars">${starsText(view.stars)}</div>
       <div class="nar-result-grid">
         ${resultStat("SCORE", String(view.score), "wide")}
-        ${resultStat("ROTATIONS", String(view.rotations))}
+        ${resultStat("LAUNCHES", String(view.launches))}
         ${resultStat("PAR", String(view.par))}
         ${resultStat("HINTS", String(view.hints))}
       </div>
@@ -290,16 +287,17 @@ export function helpHtml(reduced: boolean): string {
       <span class="nar-spacer"></span>
     </div>
     <div class="nar-help">
-      <p><b>Rotate</b> the arrow tiles until every beam reaches its portal. Tap a tile to spin it a quarter turn clockwise.</p>
-      <p><b>Read</b> the trail: your live beams glow cyan. A beam that escapes the grid, hits a wall, or loops back on itself is drawn as a warning.</p>
+      <p><b>Launch</b> an arrow by tapping it. It slides one cell in the direction it points — it can never turn.</p>
+      <p>An arrow only moves when the cell in front of it is empty. Wall it in and it stays put. When an arrow reaches the edge it <b>escapes</b>.</p>
+      <p>Clear every arrow to finish. If arrows remain and none can move, the board is a <b>dead end</b>.</p>
       <ul class="nar-legend">
-        <li><span class="nar-legend-cell source" aria-hidden="true"></span> Energy source — the launch point.</li>
-        <li><span class="nar-legend-cell arrow" aria-hidden="true"></span> Arrow — rotate this.</li>
-        <li><span class="nar-legend-cell exit" aria-hidden="true"></span> Portal — the beam must land here.</li>
-        <li><span class="nar-legend-cell locked" aria-hidden="true"></span> Locked tile — cannot rotate.</li>
+        <li><span class="nar-legend-cell ready" aria-hidden="true"></span> Ready — a clear cell ahead.</li>
+        <li><span class="nar-legend-cell held" aria-hidden="true"></span> Held — something blocks the way.</li>
+        <li><span class="nar-legend-cell locked" aria-hidden="true"></span> Locked — wakes after enough escapes.</li>
+        <li><span class="nar-legend-cell long" aria-hidden="true"></span> Long arrow — takes extra launches to clear.</li>
       </ul>
-      <p>The <b>par</b> is the fewest rotations the board needs. Beat it for three stars. Some boards cap your rotations, shown as <b>budget</b>.</p>
-      <p class="nar-dim">Keyboard: focus the board, move with the arrow keys, and press Enter to rotate the focused tile.</p>
+      <p>The <b>par</b> is the fewest launches the board can be cleared in. Finish without hints for three stars.</p>
+      <p class="nar-dim">Keyboard: move with the arrow keys, press Enter to launch, U to undo, H for a hint.</p>
       <button class="cta-play" data-act="close-help">Got it</button>
     </div>
   </div>`;
@@ -319,6 +317,7 @@ export function playShellHtml(state: ArrowsState, modeLabel: string, body: PlayB
         <span class="nar-badge">${modeLabel}</span>
       </div>
       <div class="nar-top-actions">
+        <button class="icon-btn nar-undo" data-act="undo" aria-label="Undo">${ICON_UNDO}</button>
         <button class="icon-btn nar-hint" data-act="hint" aria-label="Hint">${ICON_HINT}</button>
         <button class="icon-btn nar-restart" data-act="restart" aria-label="Restart board">${ICON_RESTART}</button>
       </div>

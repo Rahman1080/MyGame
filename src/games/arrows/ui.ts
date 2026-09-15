@@ -5,29 +5,37 @@ import type { GameContext } from "../../platform/types";
 import type { ArrowsSave } from "../../save/schema";
 import {
   ARROWS_TOTAL_LEVELS,
+  type ArrowsResult,
+  type ArrowsState,
+  type Dir,
   boardValue,
+  canUndo,
   dailyBestStars,
   dailyStreakOn,
   emptyArrowsSave,
   finalResult,
-  hintCell,
   isDailyDone,
   isLevelSolved,
   isLevelUnlocked,
+  launch,
   levelScore,
   levelStars,
   recordDailyRun,
   recordEndlessRun,
   recordLevelRun,
-  rotateCell,
-  type ArrowsResult,
-  type ArrowsState,
+  undo,
 } from "./logic";
-import { createDailyState, createEndlessState, createLevelState } from "./generate";
+import {
+  createDailyState,
+  createEndlessState,
+  createLevelState,
+  safeLaunchIndex,
+} from "./generate";
 import {
   boardHtml,
   helpHtml,
   hudHtml,
+  laneCells,
   liveStatusHtml,
   menuHtml,
   modeLabel,
@@ -42,13 +50,20 @@ import {
 
 type Screen = "menu" | "play" | "over" | "help";
 
+interface FlyerRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 let app: HTMLElement;
 let ctx: GameContext<ArrowsSave> | null = null;
 let state: ArrowsState | null = null;
 let screen: Screen = "menu";
 let helpFrom: Screen = "menu";
 let date = "";
-let cursor = 0;
+let cursorArrow = 0;
 let keyboardMode = false;
 let hintFocus: number | null = null;
 let statusMessage = "";
@@ -57,8 +72,7 @@ let transitioning = false;
 let endlessScore = 0;
 let endlessCleared = 0;
 let endlessIndex = 0;
-let endlessSeed = "";
-let endlessRun = 0;
+let endlessSalt = "0";
 let aborter: AbortController | null = null;
 let timers: number[] = [];
 
@@ -80,25 +94,62 @@ function save(): ArrowsSave {
   return ctx?.save ?? emptyArrowsSave();
 }
 
-function boardElement(): HTMLElement | null {
-  return app.querySelector<HTMLElement>(".nar-board");
-}
-
 function setStatus(message: string): void {
   statusMessage = message;
   const el = app.querySelector<HTMLElement>("#arrows-status");
   if (el) el.textContent = message;
 }
 
+function arrowTiles(index: number): HTMLElement[] {
+  return Array.from(app.querySelectorAll<HTMLElement>(`[data-arrow="${index}"]`));
+}
+
+function flashArrow(index: number, className: string): void {
+  const tiles = arrowTiles(index);
+  for (const tile of tiles) tile.classList.add(className);
+  schedule(() => {
+    for (const tile of tiles) tile.classList.remove(className);
+  }, 420);
+}
+
+function captureCellRect(cell: number): FlyerRect | null {
+  const wrap = app.querySelector<HTMLElement>(".nar-board-wrap");
+  const el = wrap?.querySelector<HTMLElement>(`[data-cell="${cell}"]`);
+  if (!wrap || !el) return null;
+  const w = wrap.getBoundingClientRect();
+  const c = el.getBoundingClientRect();
+  return { left: c.left - w.left, top: c.top - w.top, width: c.width, height: c.height };
+}
+
+function spawnFlyer(rect: FlyerRect, dir: Dir): void {
+  if (!state) return;
+  const wrap = app.querySelector<HTMLElement>(".nar-board-wrap");
+  if (!wrap) return;
+  const flyer = document.createElement("span");
+  flyer.className = `nar-flyer d${dir}`;
+  flyer.style.left = `${rect.left}px`;
+  flyer.style.top = `${rect.top}px`;
+  flyer.style.width = `${rect.width}px`;
+  flyer.style.height = `${rect.height}px`;
+  const stepH = rect.width;
+  const stepV = rect.height;
+  const distance = (state.size + 1) * Math.max(stepH, stepV) + 40;
+  const dx = dir === 1 ? distance : dir === 3 ? -distance : 0;
+  const dy = dir === 2 ? distance : dir === 0 ? -distance : 0;
+  flyer.style.setProperty("--dx", `${dx}px`);
+  flyer.style.setProperty("--dy", `${dy}px`);
+  wrap.appendChild(flyer);
+  schedule(() => flyer.remove(), 520);
+}
+
 function refreshPlay(): void {
   if (!state) return;
-  const view: BoardView = { focus: keyboardMode ? cursor : null, hint: hintFocus };
+  const view: BoardView = { focus: keyboardMode ? cursorArrow : null, hint: hintFocus };
   const wrap = app.querySelector<HTMLElement>(".nar-board-wrap");
   if (wrap) wrap.innerHTML = boardHtml(state, view);
   const hud = app.querySelector<HTMLElement>(".nar-hud");
   if (hud) hud.outerHTML = hudHtml(state);
   setStatus(statusMessage);
-  if (keyboardMode) boardElement()?.focus();
 }
 
 function buildMenuView(): MenuView {
@@ -143,7 +194,10 @@ function render(): void {
     render();
     return;
   }
-  const body = { board: boardHtml(state, { focus: keyboardMode ? cursor : null, hint: hintFocus }), status: liveStatusHtml(statusMessage) };
+  const body = {
+    board: boardHtml(state, { focus: keyboardMode ? cursorArrow : null, hint: hintFocus }),
+    status: liveStatusHtml(statusMessage),
+  };
   app.innerHTML = playShellHtml(state, modeLabel(state.mode, state), body, reduced());
   if (screen === "over" && resultView) {
     const shell = app.querySelector<HTMLElement>(".nar-shell");
@@ -151,50 +205,21 @@ function render(): void {
   }
 }
 
-function spawnSparks(): void {
-  if (!state || reduced()) return;
-  const sparks = app.querySelector<HTMLElement>(".nar-sparks");
-  if (!sparks) return;
-  const offsets = [
-    [-16, -20],
-    [15, -24],
-    [-22, 8],
-    [20, 12],
-    [0, -28],
-    [8, 22],
-  ];
-  const cells = (state.order.length > 0 ? state.order : state.sources.map((s) => s.cell)).slice(0, 18);
-  for (const index of cells) {
-    const row = Math.floor(index / state.size);
-    const col = index % state.size;
-    const left = ((col + 0.5) / state.size) * 100;
-    const top = ((row + 0.5) / state.size) * 100;
-    offsets.forEach(([dx, dy], k) => {
-      const spark = document.createElement("span");
-      spark.className = `nar-spark s${(k % 3) + 1}`;
-      spark.style.left = `${left}%`;
-      spark.style.top = `${top}%`;
-      spark.style.setProperty("--dx", `${dx}px`);
-      spark.style.setProperty("--dy", `${dy}px`);
-      sparks.appendChild(spark);
-    });
-  }
-  schedule(() => {
-    sparks.innerHTML = "";
-  }, 560);
-}
-
 /* ------------------------------------------------------------------- modes */
+
+function resetRunState(): void {
+  cursorArrow = 0;
+  keyboardMode = false;
+  hintFocus = null;
+  transitioning = false;
+  resultView = null;
+}
 
 function startLevel(level: number): void {
   if (!ctx) return;
   const clamped = Math.max(1, Math.min(ARROWS_TOTAL_LEVELS, Math.floor(level)));
   state = createLevelState(clamped);
-  cursor = 0;
-  keyboardMode = false;
-  hintFocus = null;
-  transitioning = false;
-  resultView = null;
+  resetRunState();
   statusMessage = statusText(state);
   screen = "play";
   render();
@@ -204,11 +229,7 @@ function startLevel(level: number): void {
 function startDaily(): void {
   if (!ctx) return;
   state = createDailyState(date);
-  cursor = 0;
-  keyboardMode = false;
-  hintFocus = null;
-  transitioning = false;
-  resultView = null;
+  resetRunState();
   statusMessage = statusText(state);
   screen = "play";
   render();
@@ -217,17 +238,12 @@ function startDaily(): void {
 
 function startEndless(): void {
   if (!ctx) return;
-  endlessRun += 1;
-  endlessSeed = `arrows:endless:${Date.now()}:${endlessRun}`;
+  endlessSalt = `${Date.now()}`;
   endlessIndex = 0;
   endlessScore = 0;
   endlessCleared = 0;
-  state = createEndlessState(endlessSeed, 0);
-  cursor = 0;
-  keyboardMode = false;
-  hintFocus = null;
-  transitioning = false;
-  resultView = null;
+  state = createEndlessState(0, endlessSalt);
+  resetRunState();
   statusMessage = statusText(state);
   screen = "play";
   render();
@@ -241,75 +257,83 @@ function restart(): void {
   else startLevel(state.level);
 }
 
-/* ----------------------------------------------------------------- gameplay */
+/* ---------------------------------------------------------------- gameplay */
 
 function afterSolve(next: () => void): void {
   transitioning = true;
   ctx?.audio.levelComplete();
   ctx?.haptics.success();
-  spawnSparks();
   if (reduced()) next();
-  else schedule(next, 420);
+  else schedule(next, 440);
 }
 
-function rotate(index: number): void {
+function doLaunch(index: number): void {
   if (!state || screen !== "play" || transitioning || state.status !== "playing") return;
-  const cell = state.cells[index];
-  if (!cell || (cell.kind !== "arrow" && cell.kind !== "checkpoint")) return;
-  if (cell.locked) {
+  const arrow = state.arrows[index];
+  if (!arrow) return;
+
+  const flyerRect = reduced() ? null : captureCellRect(state.heads[index]!);
+  const outcome = launch(state, index);
+  if (!outcome.moved) {
     ctx?.audio.invalid();
     ctx?.haptics.fail();
-    setStatus("That tile is locked in place.");
-    return;
-  }
-  const outcome = rotateCell(state, index);
-  if (!outcome.changed) {
-    if (outcome.reason === "limit") {
-      ctx?.audio.invalid();
-      setStatus("No rotations left.");
+    if (outcome.reason === "locked") {
+      setStatus(`Locked — ${arrow.lock} arrows must escape first.`);
+    } else if (outcome.reason === "blocked") {
+      setStatus("Blocked — the cell ahead is full.");
     }
+    flashArrow(index, "shake");
     return;
   }
+
   state = outcome.state;
   hintFocus = null;
-  cursor = index;
+  cursorArrow = index;
+  const dir = arrow.dir;
+
   if (state.status === "solved") {
-    statusMessage = "All beams locked in.";
+    statusMessage = "Clean exit. Every arrow escaped.";
     refreshPlay();
+    if (flyerRect) spawnFlyer(flyerRect, dir);
+    else if (!reduced()) flashArrow(index, "just-moved");
     afterSolve(onSolved);
     return;
   }
-  if (state.status === "failed") {
-    statusMessage = "Out of rotations.";
+
+  if (state.status === "stuck") {
+    statusMessage = "Dead end — no arrow can launch.";
     refreshPlay();
     finishFailed();
     return;
   }
+
   ctx?.audio.select();
   ctx?.haptics.select();
   statusMessage = statusText(state);
   refreshPlay();
+  if (flyerRect) spawnFlyer(flyerRect, dir);
+  else if (!reduced()) flashArrow(index, "just-moved");
 }
 
 function onSolved(): void {
   if (!state) return;
   if (state.mode === "endless") {
-    const gain = boardValue(state.size, state.par, state.rotations) + (endlessIndex + 1) * 25;
+    const gain = boardValue(state.arrows.length, state.par) + (endlessIndex + 1) * 25;
     endlessScore += gain;
     endlessCleared += 1;
     transitioning = true;
     setStatus(`Board cleared! +${gain}.`);
-    schedule(() => {
-      if (!ctx || state?.mode !== "endless") return;
-      endlessIndex += 1;
-      state = createEndlessState(endlessSeed, endlessIndex);
-      cursor = 0;
-      hintFocus = null;
-      keyboardMode = false;
-      transitioning = false;
-      statusMessage = statusText(state);
-      render();
-    }, reduced() ? 0 : 480);
+    schedule(
+      () => {
+        if (!ctx || state?.mode !== "endless") return;
+        endlessIndex += 1;
+        state = createEndlessState(endlessIndex, endlessSalt);
+        resetRunState();
+        statusMessage = statusText(state);
+        render();
+      },
+      reduced() ? 0 : 520,
+    );
     return;
   }
   finishSolved();
@@ -320,24 +344,26 @@ function finishSolved(): void {
   transitioning = false;
   const result: ArrowsResult = finalResult(state);
   const stars = result.stars;
-  const score = levelScore(result.rotations, result.par, result.hints, stars);
+  const score = levelScore(result.launches, result.par, result.hints, stars);
   if (state.mode === "daily") {
     const ranked = !isDailyDone(ctx.save, date);
     if (ranked) {
       ctx.updateSave(recordDailyRun(ctx.save, result));
-      ctx.report({ score, stars, solved: true, stats: { rotations: result.rotations, par: result.par, hints: result.hints } });
-      ctx.analytics.track(EVENTS.dailyCompleted, { game: "arrows", stars, rotations: result.rotations });
+      ctx.report({ score, stars, solved: true, stats: { launches: result.launches, par: result.par, hints: result.hints } });
+      ctx.analytics.track(EVENTS.dailyCompleted, { game: "arrows", stars, launches: result.launches });
     }
     resultView = {
       mode: "daily",
       level: 0,
       date,
       solved: true,
+      stuck: false,
       score,
-      rotations: result.rotations,
+      launches: result.launches,
       par: result.par,
       hints: result.hints,
       stars,
+      arrows: state.arrows.length,
       boards: 1,
       isBest: false,
       ranked,
@@ -346,18 +372,20 @@ function finishSolved(): void {
   } else {
     const priorStars = levelStars(ctx.save, state.level);
     ctx.updateSave(recordLevelRun(ctx.save, result));
-    ctx.report({ score, stars, solved: true, stats: { rotations: result.rotations, par: result.par, hints: result.hints } });
-    ctx.analytics.track(EVENTS.gameCompleted, { game: "arrows", level: state.level, stars, rotations: result.rotations });
+    ctx.report({ score, stars, solved: true, stats: { launches: result.launches, par: result.par, hints: result.hints } });
+    ctx.analytics.track(EVENTS.gameCompleted, { game: "arrows", level: state.level, stars, launches: result.launches });
     resultView = {
       mode: "level",
       level: state.level,
       date,
       solved: true,
+      stuck: false,
       score,
-      rotations: result.rotations,
+      launches: result.launches,
       par: result.par,
       hints: result.hints,
       stars,
+      arrows: state.arrows.length,
       boards: 1,
       isBest: stars > priorStars,
       ranked: false,
@@ -375,17 +403,23 @@ function finishFailed(): void {
     const priorBest = ctx.save.best;
     ctx.updateSave(recordEndlessRun(ctx.save, endlessScore, endlessCleared));
     ctx.report({ score: endlessScore, stars: 0, solved: endlessCleared > 0, stats: { boards: endlessCleared } });
-    ctx.analytics.track(endlessCleared > 0 ? EVENTS.gameCompleted : EVENTS.gameFailed, { game: "arrows", score: endlessScore, boards: endlessCleared });
+    ctx.analytics.track(endlessCleared > 0 ? EVENTS.gameCompleted : EVENTS.gameFailed, {
+      game: "arrows",
+      score: endlessScore,
+      boards: endlessCleared,
+    });
     resultView = {
       mode: "endless",
       level: 0,
       date,
       solved: false,
+      stuck: true,
       score: endlessScore,
-      rotations: state.rotations,
+      launches: state.launches,
       par: state.par,
       hints: state.hints,
       stars: 0,
+      arrows: state.arrows.length,
       boards: endlessCleared,
       isBest: endlessScore > priorBest,
       ranked: false,
@@ -393,18 +427,20 @@ function finishFailed(): void {
     };
   } else {
     const result = finalResult(state);
-    ctx.report({ score: 0, stars: 0, solved: false, stats: { rotations: result.rotations, par: result.par } });
+    ctx.report({ score: 0, stars: 0, solved: false, stats: { launches: result.launches, par: result.par } });
     ctx.analytics.track(EVENTS.gameFailed, { game: "arrows", mode: state.mode, level: state.level });
     resultView = {
       mode: state.mode,
       level: state.level,
       date,
       solved: false,
+      stuck: true,
       score: 0,
-      rotations: result.rotations,
+      launches: result.launches,
       par: result.par,
       hints: result.hints,
       stars: 0,
+      arrows: state.arrows.length,
       boards: 1,
       isBest: false,
       ranked: false,
@@ -419,18 +455,30 @@ function finishFailed(): void {
 
 function hint(): void {
   if (!state || screen !== "play" || transitioning || state.status !== "playing") return;
-  const target = hintCell(state);
+  const target = safeLaunchIndex(state);
   if (target === null) {
-    setStatus("Nothing left to correct.");
+    setStatus("No arrow can launch — undo a move.");
     return;
   }
   state = { ...state, hints: state.hints + 1 };
   hintFocus = target;
-  cursor = target;
+  cursorArrow = target;
   ctx?.audio.select();
   ctx?.haptics.select();
   ctx?.analytics.track(EVENTS.hintUsed, { game: "arrows", level: state.level });
-  setStatus("This tile still needs a turn.");
+  setStatus("This arrow can launch safely.");
+  refreshPlay();
+}
+
+function doUndo(): void {
+  if (!state || screen !== "play" || transitioning || !canUndo(state)) {
+    setStatus("Nothing to undo.");
+    return;
+  }
+  state = undo(state);
+  hintFocus = null;
+  ctx?.audio.tap();
+  statusMessage = statusText(state);
   refreshPlay();
 }
 
@@ -448,9 +496,43 @@ function goMenu(): void {
 
 /* ------------------------------------------------------------------ events */
 
+function moveCursor(dir: Dir): void {
+  if (!state) return;
+  const size = state.size;
+  const fromHead = state.heads[cursorArrow] ?? 0;
+  const fr = Math.floor(fromHead / size);
+  const fc = fromHead % size;
+  let best = -1;
+  let bestScore = Infinity;
+  state.arrows.forEach((_arrow, i) => {
+    if (i === cursorArrow) return;
+    const head = state!.heads[i]!;
+    if (head < 0 || (state!.bodies[i] ?? 0) <= 0) return;
+    const r = Math.floor(head / size);
+    const c = head % size;
+    const dr = r - fr;
+    const dc = c - fc;
+    if (dir === 0 && dr >= 0) return;
+    if (dir === 2 && dr <= 0) return;
+    if (dir === 1 && dc <= 0) return;
+    if (dir === 3 && dc >= 0) return;
+    const aligned = dir === 0 || dir === 2 ? dc === 0 : dr === 0;
+    const score = Math.abs(dr) + Math.abs(dc) + (aligned ? 0 : 1000);
+    if (score < bestScore) {
+      bestScore = score;
+      best = i;
+    }
+  });
+  if (best >= 0) {
+    cursorArrow = best;
+    keyboardMode = true;
+    refreshPlay();
+  }
+}
+
 function onClick(e: MouseEvent): void {
   if (!ctx) return;
-  const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act],[data-level],[data-cell]");
+  const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act],[data-level],[data-arrow]");
   if (!target) return;
   const act = target.dataset.act;
   if (act) {
@@ -467,6 +549,7 @@ function onClick(e: MouseEvent): void {
     else if (act === "endless") startEndless();
     else if (act === "daily" || act === "daily-again") startDaily();
     else if (act === "restart") restart();
+    else if (act === "undo") doUndo();
     else if (act === "menu") goMenu();
     else if (act === "level-next") startLevel((state?.level ?? 0) + 1);
     else if (act === "hint") hint();
@@ -477,7 +560,32 @@ function onClick(e: MouseEvent): void {
     startLevel(Number(levelAttr));
     return;
   }
-  if (target.dataset.cell !== undefined && screen === "play") rotate(Number(target.dataset.cell));
+  if (target.dataset.arrow !== undefined && screen === "play") doLaunch(Number(target.dataset.arrow));
+}
+
+function clearPress(): void {
+  const wrap = app.querySelector<HTMLElement>(".nar-board-wrap");
+  if (!wrap) return;
+  for (const el of Array.from(wrap.querySelectorAll<HTMLElement>(".lane, .lane-block, .pressed"))) {
+    el.classList.remove("lane", "lane-block", "pressed");
+  }
+}
+
+function onPointerDown(e: PointerEvent): void {
+  if (screen !== "play" || !state) return;
+  const target = (e.target as HTMLElement).closest<HTMLElement>("[data-arrow]");
+  if (!target) return;
+  const index = Number(target.dataset.arrow);
+  const preview = laneCells(state, index);
+  const wrap = app.querySelector<HTMLElement>(".nar-board-wrap");
+  if (!wrap) return;
+  for (const cell of preview.cells) {
+    wrap.querySelector<HTMLElement>(`[data-cell="${cell}"]`)?.classList.add("lane");
+  }
+  if (preview.blocked && preview.cells.length > 0) {
+    wrap.querySelector<HTMLElement>(`[data-cell="${preview.cells[preview.cells.length - 1]}"]`)?.classList.add("lane-block");
+  }
+  for (const tile of arrowTiles(index)) tile.classList.add("pressed");
 }
 
 function onKeyDown(e: KeyboardEvent): void {
@@ -497,28 +605,22 @@ function onKeyDown(e: KeyboardEvent): void {
     hint();
     return;
   }
+  if (e.key === "u" || e.key === "U") {
+    doUndo();
+    return;
+  }
   const isBoard = keyboardMode || document.activeElement?.classList.contains("nar-board") === true;
   if (!isBoard) return;
-  const size = state.size;
-  const row = Math.floor(cursor / size);
-  const col = cursor % size;
-  if (e.key === "ArrowUp" || e.key === "ArrowDown" || e.key === "ArrowLeft" || e.key === "ArrowRight") {
+  if (e.key === "ArrowUp" || e.key === "ArrowRight" || e.key === "ArrowDown" || e.key === "ArrowLeft") {
     e.preventDefault();
-    let r = row;
-    let c = col;
-    if (e.key === "ArrowUp") r = Math.max(0, row - 1);
-    if (e.key === "ArrowDown") r = Math.min(size - 1, row + 1);
-    if (e.key === "ArrowLeft") c = Math.max(0, col - 1);
-    if (e.key === "ArrowRight") c = Math.min(size - 1, col + 1);
-    cursor = r * size + c;
-    keyboardMode = true;
-    refreshPlay();
+    const dir: Dir = e.key === "ArrowUp" ? 0 : e.key === "ArrowRight" ? 1 : e.key === "ArrowDown" ? 2 : 3;
+    moveCursor(dir);
     return;
   }
   if (e.key === "Enter" || e.key === " ") {
     e.preventDefault();
     keyboardMode = true;
-    rotate(cursor);
+    doLaunch(cursorArrow);
   }
 }
 
@@ -542,21 +644,20 @@ export function mountArrows(root: HTMLElement, context: GameContext<ArrowsSave>)
   state = null;
   screen = "menu";
   helpFrom = "menu";
-  cursor = 0;
-  keyboardMode = false;
-  hintFocus = null;
+  resetRunState();
   statusMessage = "";
-  resultView = null;
-  transitioning = false;
   endlessScore = 0;
   endlessCleared = 0;
   endlessIndex = 0;
-  endlessSeed = "";
-  endlessRun = 0;
+  endlessSalt = "0";
   context.audio.setMuted(context.settings.muted());
   aborter = new AbortController();
   const { signal } = aborter;
   app.addEventListener("click", onClick, { signal });
+  app.addEventListener("pointerdown", onPointerDown, { signal });
+  app.addEventListener("pointerup", clearPress, { signal });
+  app.addEventListener("pointercancel", clearPress, { signal });
+  app.addEventListener("pointerleave", clearPress, { signal });
   window.addEventListener("keydown", onKeyDown, { signal });
   setBackHandler(handleBack);
   render();

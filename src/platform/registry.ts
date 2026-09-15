@@ -70,7 +70,7 @@ export const GAMES: GameDescriptor[] = [
     meta: {
       id: "arrows",
       name: "NEON ARROWS",
-      tagline: "Steer the beam",
+      tagline: "Arrow Escape",
       icon: "arrows",
       accent: "#4FC3FF",
       status: "ready",

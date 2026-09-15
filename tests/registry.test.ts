@@ -65,7 +65,7 @@ describe("game registry", () => {
     const desc = findGame("arrows");
     expect(desc?.meta.status).toBe("ready");
     expect(desc?.meta.name).toBe("NEON ARROWS");
-    expect(desc?.meta.tagline).toBe("Steer the beam");
+    expect(desc?.meta.tagline).toBe("Arrow Escape");
     expect(desc?.meta.hasGauntlet).toBe(false);
     expect(desc?.load).toBeTypeOf("function");
     const game = (await desc!.load!()).default;

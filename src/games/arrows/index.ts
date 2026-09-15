@@ -7,7 +7,7 @@ const DAILY_PREFIX = "daily:arrows:";
 const meta = {
   id: "arrows" as const,
   name: "NEON ARROWS",
-  tagline: "Steer the beam",
+  tagline: "Arrow Escape",
   icon: "arrows",
   accent: "#4FC3FF",
   status: "ready" as const,

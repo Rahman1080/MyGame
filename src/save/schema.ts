@@ -195,7 +195,8 @@ export interface BlocksSave {
 /** One scored NEON ARROWS daily board, keyed by local date. */
 export interface ArrowsDailyRecord {
   solved: boolean;
-  rotations: number;
+  /** Successful launches used to clear the board. */
+  launches: number;
   stars: number;
 }
 
@@ -343,7 +344,7 @@ function asArrowsDaily(value: unknown): Record<string, ArrowsDailyRecord> {
     const e = entry as Record<string, unknown>;
     out[date] = {
       solved: e.solved === true,
-      rotations: asCount(e.rotations),
+      launches: asCount(e.launches),
       stars: clampStar(e.stars),
     };
   }
