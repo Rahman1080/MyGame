@@ -52,6 +52,7 @@ export interface Game {
   anim: Anim;
   selected: { row: number; col: number } | null;
   reduced: boolean;
+  persist?: (save: SaveData) => void;
 }
 
 function emptyAnim(): Anim {
@@ -71,8 +72,8 @@ export function prefersReduced(): boolean {
   return typeof matchMedia !== "undefined" && matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
-export function createGame(): Game {
-  const save = ensureDaily(loadSave(), localYmd());
+export function createGame(externalSave?: SaveData, persist?: (save: SaveData) => void): Game {
+  const save = ensureDaily(externalSave ?? loadSave(), localYmd());
   synth.setMuted(save.muted);
   return {
     screen: "home",
@@ -85,11 +86,13 @@ export function createGame(): Game {
     anim: emptyAnim(),
     selected: null,
     reduced: prefersReduced(),
+    persist,
   };
 }
 
 function persist(game: Game): void {
-  persistSave(game.save);
+  if (game.persist) game.persist(game.save);
+  else persistSave(game.save);
 }
 
 export function currentPuzzle(game: Game): Puzzle {

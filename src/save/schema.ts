@@ -123,6 +123,7 @@ export interface ProfileSave {
   level: number;
   streak: number;
   lastDailyDate: string | null;
+  lastGame: string;
   muted: boolean;
   reduceMotion: "auto" | "on" | "off";
   theme: string;
@@ -166,6 +167,7 @@ export function defaultProfile(): ProfileSave {
     level: 1,
     streak: 0,
     lastDailyDate: null,
+    lastGame: "glowtrail",
     muted: false,
     reduceMotion: "auto",
     theme: "neon",
@@ -219,6 +221,7 @@ export function sanitizeProfile(raw: unknown): ProfileSave {
     d.streak = Math.floor(o.streak);
   }
   d.lastDailyDate = asDateOrNull(o.lastDailyDate);
+  if (typeof o.lastGame === "string" && o.lastGame.length > 0) d.lastGame = o.lastGame;
   if (typeof o.muted === "boolean") d.muted = o.muted;
   if (o.reduceMotion === "auto" || o.reduceMotion === "on" || o.reduceMotion === "off") {
     d.reduceMotion = o.reduceMotion;

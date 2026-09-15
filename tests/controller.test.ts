@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { createGame, doHint, doLaunch, openBoard, tapCell, tick } from "../src/game/controller";
+import { createGame, doHint, doLaunch, openBoard, tapCell, tick, toggleMute } from "../src/game/controller";
 import { DIR_RIGHT, DIR_UP, rotateDirection } from "../src/engine";
 import { rotationAngle } from "../src/render/rotationAnim";
+import { defaultSave, type SaveData } from "../src/save/schema";
 
 describe("rotation animation state", () => {
   it("stores OLD and NEW directions for a clockwise step", () => {
@@ -62,6 +63,21 @@ describe("hint does not auto-rotate", () => {
       row: game.session!.hint!.row,
       col: game.session!.hint!.col,
     });
+  });
+});
+
+describe("platform save bridge", () => {
+  it("uses the injected slice and persist hook instead of v1 storage", () => {
+    const injected = defaultSave();
+    const persisted: SaveData[] = [];
+    const game = createGame(injected, (s) => {
+      persisted.push(s);
+    });
+    game.save.stars["pulse-1"] = 3;
+    toggleMute(game);
+    expect(game.save.muted).toBe(true);
+    expect(persisted.at(-1)?.muted).toBe(true);
+    expect(persisted.at(-1)?.stars["pulse-1"]).toBe(3);
   });
 });
 
