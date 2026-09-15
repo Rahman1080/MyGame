@@ -111,3 +111,150 @@ export function sanitizeSave(raw: unknown): SaveData {
   d.version = SAVE_VERSION;
   return d;
 }
+
+export const SAVE_KEY_V1 = SAVE_KEY;
+export const SAVE_KEY_V2 = "glowtrail:v2";
+export const SAVE_VERSION_V2 = 2;
+
+export type GlowtrailSave = SaveData;
+
+export interface ProfileSave {
+  xp: number;
+  level: number;
+  streak: number;
+  lastDailyDate: string | null;
+  muted: boolean;
+  reduceMotion: "auto" | "on" | "off";
+  theme: string;
+  cosmetics: string[];
+  achievements: string[];
+  gauntletDate: string | null;
+  gauntletDone: string[];
+}
+
+export interface FusionSave {
+  best: number;
+  runs: number;
+  dailyBest: Record<string, number>;
+}
+
+export interface PrismSave {
+  solved: string[];
+  bestMoves: Record<string, number>;
+}
+
+export interface GlyphSave {
+  wins: number;
+  playDates: string[];
+  lastResult: string | null;
+}
+
+export interface SaveV2 {
+  version: 2;
+  profile: ProfileSave;
+  games: {
+    glowtrail: GlowtrailSave;
+    fusion: FusionSave;
+    prism: PrismSave;
+    glyph: GlyphSave;
+  };
+}
+
+export function defaultProfile(): ProfileSave {
+  return {
+    xp: 0,
+    level: 1,
+    streak: 0,
+    lastDailyDate: null,
+    muted: false,
+    reduceMotion: "auto",
+    theme: "neon",
+    cosmetics: [],
+    achievements: [],
+    gauntletDate: null,
+    gauntletDone: [],
+  };
+}
+
+export function defaultSaveV2(): SaveV2 {
+  return {
+    version: 2,
+    profile: defaultProfile(),
+    games: {
+      glowtrail: defaultSave(),
+      fusion: { best: 0, runs: 0, dailyBest: {} },
+      prism: { solved: [], bestMoves: {} },
+      glyph: { wins: 0, playDates: [], lastResult: null },
+    },
+  };
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+function asNumberMap(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "number" && Number.isFinite(v)) out[k] = v;
+  }
+  return out;
+}
+
+function asCount(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0;
+  return Math.floor(value);
+}
+
+export function sanitizeProfile(raw: unknown): ProfileSave {
+  const d = defaultProfile();
+  if (raw == null || typeof raw !== "object") return d;
+  const o = raw as Record<string, unknown>;
+  d.xp = asCount(o.xp);
+  if (typeof o.level === "number" && Number.isFinite(o.level) && o.level >= 1) {
+    d.level = Math.floor(o.level);
+  }
+  if (typeof o.streak === "number" && Number.isFinite(o.streak) && o.streak >= 0) {
+    d.streak = Math.floor(o.streak);
+  }
+  d.lastDailyDate = asDateOrNull(o.lastDailyDate);
+  if (typeof o.muted === "boolean") d.muted = o.muted;
+  if (o.reduceMotion === "auto" || o.reduceMotion === "on" || o.reduceMotion === "off") {
+    d.reduceMotion = o.reduceMotion;
+  }
+  if (typeof o.theme === "string") d.theme = o.theme;
+  d.cosmetics = asStringArray(o.cosmetics);
+  d.achievements = asStringArray(o.achievements);
+  d.gauntletDate = asDateOrNull(o.gauntletDate);
+  d.gauntletDone = asStringArray(o.gauntletDone);
+  return d;
+}
+
+export function sanitizeV2(raw: unknown): SaveV2 {
+  const d = defaultSaveV2();
+  if (raw == null || typeof raw !== "object") return d;
+  const o = raw as Record<string, unknown>;
+  d.profile = sanitizeProfile(o.profile);
+  const g = o.games && typeof o.games === "object" ? (o.games as Record<string, unknown>) : {};
+  d.games.glowtrail = sanitizeSave(g.glowtrail);
+  if (g.fusion && typeof g.fusion === "object") {
+    const f = g.fusion as Record<string, unknown>;
+    d.games.fusion.best = asCount(f.best);
+    d.games.fusion.runs = asCount(f.runs);
+    d.games.fusion.dailyBest = asNumberMap(f.dailyBest);
+  }
+  if (g.prism && typeof g.prism === "object") {
+    const p = g.prism as Record<string, unknown>;
+    d.games.prism.solved = asStringArray(p.solved);
+    d.games.prism.bestMoves = asNumberMap(p.bestMoves);
+  }
+  if (g.glyph && typeof g.glyph === "object") {
+    const w = g.glyph as Record<string, unknown>;
+    d.games.glyph.wins = asCount(w.wins);
+    d.games.glyph.playDates = asStringArray(w.playDates);
+    d.games.glyph.lastResult = typeof w.lastResult === "string" ? w.lastResult : null;
+  }
+  d.version = 2;
+  return d;
+}

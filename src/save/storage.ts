@@ -1,5 +1,16 @@
 import { daysBetween, localYmd } from "../gen/daily";
-import { defaultSave, sanitizeSave, SAVE_KEY, type SaveData } from "./schema";
+import { migrateSave } from "./migration";
+import {
+  defaultSave,
+  defaultSaveV2,
+  sanitizeSave,
+  sanitizeV2,
+  SAVE_KEY,
+  SAVE_KEY_V1,
+  SAVE_KEY_V2,
+  type SaveData,
+  type SaveV2,
+} from "./schema";
 
 export interface StorageLike {
   getItem(key: string): string | null;
@@ -40,6 +51,49 @@ export function loadSave(storage: StorageLike = resolveStorage()): SaveData {
 export function persistSave(data: SaveData, storage: StorageLike = resolveStorage()): void {
   try {
     storage.setItem(SAVE_KEY, JSON.stringify(data));
+  } catch {
+    /* never block gameplay */
+  }
+}
+
+function safeGet(storage: StorageLike, key: string): string | null {
+  try {
+    return storage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Load the shared v2 save. Prefers an existing valid `glowtrail:v2`; otherwise
+ * migrates `glowtrail:v1` losslessly and persists v2 while leaving v1 untouched.
+ * A corrupt v2 or v1 falls back to defaults instead of resetting the other key.
+ */
+export function loadSaveV2(storage: StorageLike = resolveStorage()): SaveV2 {
+  const rawV2 = safeGet(storage, SAVE_KEY_V2);
+  if (rawV2 !== null) {
+    try {
+      return sanitizeV2(JSON.parse(rawV2));
+    } catch {
+      /* corrupt v2: fall through and try v1 */
+    }
+  }
+  const rawV1 = safeGet(storage, SAVE_KEY_V1);
+  if (rawV1 !== null) {
+    try {
+      const migrated = migrateSave(JSON.parse(rawV1));
+      persistSaveV2(migrated, storage);
+      return migrated;
+    } catch {
+      /* corrupt v1: fall through to defaults */
+    }
+  }
+  return defaultSaveV2();
+}
+
+export function persistSaveV2(data: SaveV2, storage: StorageLike = resolveStorage()): void {
+  try {
+    storage.setItem(SAVE_KEY_V2, JSON.stringify(data));
   } catch {
     /* never block gameplay */
   }
