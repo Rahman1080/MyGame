@@ -144,10 +144,22 @@ export interface PrismSave {
   bestMoves: Record<string, number>;
 }
 
+export interface GlyphDailyRecord {
+  won: boolean;
+  guesses: number;
+  modifier: string;
+  score: number;
+}
+
 export interface GlyphSave {
   wins: number;
+  losses: number;
+  streak: number;
+  bestStreak: number;
+  bestGuesses: number;
   playDates: string[];
   lastResult: string | null;
+  daily: Record<string, GlyphDailyRecord>;
 }
 
 export interface SaveV2 {
@@ -186,7 +198,16 @@ export function defaultSaveV2(): SaveV2 {
       glowtrail: defaultSave(),
       fusion: { best: 0, runs: 0, dailyBest: {} },
       prism: { solved: [], bestMoves: {} },
-      glyph: { wins: 0, playDates: [], lastResult: null },
+      glyph: {
+        wins: 0,
+        losses: 0,
+        streak: 0,
+        bestStreak: 0,
+        bestGuesses: 0,
+        playDates: [],
+        lastResult: null,
+        daily: {},
+      },
     },
   };
 }
@@ -207,6 +228,23 @@ function asNumberMap(value: unknown): Record<string, number> {
 function asCount(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0;
   return Math.floor(value);
+}
+
+function asGlyphDaily(value: unknown): Record<string, GlyphDailyRecord> {
+  const out: Record<string, GlyphDailyRecord> = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [date, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!isDateString(date)) continue;
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    out[date] = {
+      won: e.won === true,
+      guesses: asCount(e.guesses),
+      modifier: typeof e.modifier === "string" ? e.modifier : "clear",
+      score: asCount(e.score),
+    };
+  }
+  return out;
 }
 
 export function sanitizeProfile(raw: unknown): ProfileSave {
@@ -255,8 +293,13 @@ export function sanitizeV2(raw: unknown): SaveV2 {
   if (g.glyph && typeof g.glyph === "object") {
     const w = g.glyph as Record<string, unknown>;
     d.games.glyph.wins = asCount(w.wins);
+    d.games.glyph.losses = asCount(w.losses);
+    d.games.glyph.streak = asCount(w.streak);
+    d.games.glyph.bestStreak = asCount(w.bestStreak);
+    d.games.glyph.bestGuesses = asCount(w.bestGuesses);
     d.games.glyph.playDates = asStringArray(w.playDates);
     d.games.glyph.lastResult = typeof w.lastResult === "string" ? w.lastResult : null;
+    d.games.glyph.daily = asGlyphDaily(w.daily);
   }
   d.version = 2;
   return d;

@@ -1154,3 +1154,199 @@ button:focus-visible,
 }
 .prism-toast:empty { display: none; }
 
+
+.glyph-shell {
+  gap: 10px;
+  justify-content: flex-start;
+  padding-top: 12px;
+}
+
+.glyph-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  z-index: 1;
+}
+
+.glyph-head { text-align: center; flex: 1; min-width: 0; }
+.glyph-word {
+  font-family: Orbitron, sans-serif;
+  letter-spacing: 0.28em;
+  font-weight: 700;
+  color: var(--lime);
+  font-size: 15px;
+}
+.glyph-date {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--dim);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.glyph-spacer { width: 44px; }
+
+.glyph-banner {
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 26px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 12px;
+  background: rgba(156, 255, 79, 0.05);
+}
+.glyph-mod-name {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--lime);
+  font-weight: 600;
+}
+.glyph-mod-note {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--amber);
+}
+
+.glyph-board {
+  z-index: 1;
+  width: 100%;
+  max-width: 330px;
+  margin: 2px auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.glyph-row { display: flex; gap: 6px; }
+
+.glyph-tile {
+  position: relative;
+  flex: 1 1 0;
+  aspect-ratio: 1 / 1;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: #0b1018;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Orbitron, sans-serif;
+  font-size: clamp(18px, 6vw, 24px);
+  font-weight: 700;
+  color: var(--text);
+  text-transform: uppercase;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.glyph-tile .glyph-mark {
+  position: absolute;
+  right: 5px;
+  bottom: 3px;
+  font-size: 10px;
+  line-height: 1;
+  opacity: 0.9;
+}
+.glyph-tile.empty { color: transparent; }
+.glyph-tile.correct {
+  border: 2px solid var(--lime);
+  background: rgba(156, 255, 79, 0.14);
+  color: var(--lime);
+}
+.glyph-tile.present {
+  border: 2px dashed var(--amber);
+  background: rgba(255, 200, 87, 0.12);
+  color: var(--amber);
+}
+.glyph-tile.absent {
+  border: 1px solid var(--line);
+  background: #0a0e15;
+  color: var(--dim);
+}
+.glyph-shell:not(.reduce) .glyph-row.current .glyph-tile { animation: glyph-pop 0.12s ease-out; }
+
+.glyph-clues-wrap { z-index: 1; min-height: 0; }
+.glyph-clues { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.glyph-clue {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--cyan);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.glyph-status {
+  z-index: 1;
+  min-height: 18px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.glyph-keyboard {
+  z-index: 1;
+  width: 100%;
+  max-width: 430px;
+  margin: auto auto 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-bottom: 8px;
+}
+.glyph-keyrow { display: flex; gap: 5px; justify-content: center; }
+.glyph-key {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 46px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: #0e1420;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.08s ease, background 0.12s ease;
+}
+.glyph-key:active { transform: scale(0.94); }
+.glyph-key.correct { background: rgba(156, 255, 79, 0.2); border-color: var(--lime); color: var(--lime); }
+.glyph-key.present { background: rgba(255, 200, 87, 0.16); border-color: var(--amber); color: var(--amber); }
+.glyph-key.absent { background: #0a0e15; color: var(--dim); }
+.glyph-key.wide { flex: 1.6 1 0; font-size: 10px; letter-spacing: 0.08em; }
+
+.glyph-help {
+  z-index: 1;
+  overflow-y: auto;
+  flex: 1;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.glyph-legend { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.glyph-legend li { display: flex; align-items: center; gap: 10px; }
+.glyph-legend .glyph-tile { width: 40px; height: 40px; flex: 0 0 40px; aspect-ratio: auto; }
+.glyph-mod-box { border: 1px solid var(--line); border-radius: 14px; padding: 12px; background: rgba(41, 221, 244, 0.05); }
+.glyph-mod-title { color: var(--cyan); font-size: 11px; letter-spacing: 0.14em; margin-bottom: 6px; }
+.glyph-dim { font-size: 11px; color: var(--dim); }
+
+.glyph-card { max-width: 320px; }
+.glyph-practice { font-size: 10px; letter-spacing: 0.14em; color: var(--amber); margin-bottom: 8px; }
+.glyph-reveal { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
+.glyph-reveal strong { color: var(--text); letter-spacing: 0.08em; }
+
+@keyframes glyph-pop {
+  from { transform: scale(0.88); }
+  to { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .glyph-row.current .glyph-tile { animation: none; }
+  .glyph-key { transition: none; }
+}

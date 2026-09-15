@@ -49,9 +49,10 @@ export const GAMES: GameDescriptor[] = [
       tagline: "One word a day",
       icon: "glyph",
       accent: "#9CFF4F",
-      status: "soon",
+      status: "ready",
       hasGauntlet: false,
     },
+    load: () => import("../games/glyph"),
   },
 ];
 
