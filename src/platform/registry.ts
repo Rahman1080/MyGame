@@ -37,9 +37,10 @@ export const GAMES: GameDescriptor[] = [
       tagline: "Sort the spectrum",
       icon: "tube",
       accent: "#FFC857",
-      status: "soon",
-      hasGauntlet: false,
+      status: "ready",
+      hasGauntlet: true,
     },
+    load: () => import("../games/prism"),
   },
   {
     meta: {

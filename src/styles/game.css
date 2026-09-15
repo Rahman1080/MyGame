@@ -989,3 +989,168 @@ button:focus-visible,
 
 .fusion-overlay .win-card { max-width: 300px; }
 
+.prism-shell {
+  gap: 10px;
+}
+
+.prism-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 1;
+  margin-top: 4px;
+}
+
+.prism-word {
+  flex: 1;
+  font-family: Orbitron, sans-serif;
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: 0.16em;
+  text-align: center;
+  background: linear-gradient(90deg, var(--amber), var(--magenta));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.prism-best {
+  min-width: 52px;
+  text-align: right;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.prism-hud {
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+}
+.prism-title {
+  font-family: Orbitron, sans-serif;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+  color: #fff;
+}
+.prism-sub {
+  margin-top: 3px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+
+.prism-tools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 110px;
+  justify-content: flex-end;
+}
+
+.prism-choose {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 16px;
+}
+.prism-choose::-webkit-scrollbar { display: none; }
+
+.prism-daily {
+  margin-top: 6px;
+}
+.prism-daily .streak-pill { color: var(--amber); font-size: 10px; letter-spacing: 0.1em; }
+
+.prism-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.prism-tile {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: linear-gradient(160deg, rgba(255, 255, 255, 0.05), rgba(10, 16, 28, 0.9));
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.prism-tile.done {
+  border-color: rgba(255, 200, 87, 0.6);
+  box-shadow: 0 0 16px -6px var(--amber);
+}
+.prism-tile-n {
+  font-family: Orbitron, sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+}
+.prism-tile.done .prism-tile-n { color: var(--amber); }
+.prism-tile-b {
+  font-size: 9px;
+  color: var(--muted);
+  min-height: 11px;
+}
+
+.prism-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+#prism-canvas {
+  display: block;
+  max-width: 100%;
+  border-radius: 16px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.prism-overlay {
+  position: absolute;
+  inset: 0;
+}
+.prism-overlay:empty { display: none; }
+.prism-overlay .win-card { max-width: 300px; }
+
+.prism-warn {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 16px;
+  line-height: 1.45;
+}
+
+.prism-toast {
+  position: absolute;
+  left: 50%;
+  bottom: 12px;
+  transform: translateX(-50%);
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: rgba(7, 8, 13, 0.9);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  max-width: 90%;
+  text-align: center;
+  pointer-events: none;
+}
+.prism-toast:empty { display: none; }
+
