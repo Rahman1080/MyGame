@@ -60,7 +60,7 @@ export function renderHome(root: HTMLElement, deps: HomeDeps, navigate: Navigate
       <span class="continue-text">
         <span class="k">CONTINUE PLAYING</span>
         <span class="lvl-big">${escapeHtml(last.meta.name)}</span>
-        <span class="sub">${escapeHtml(last.meta.tagline)} · ★ ${stars}</span>
+        <span class="sub">${escapeHtml(last.meta.tagline)} · ${last.meta.id === "glowtrail" ? `★ ${stars}` : `LV ${profile.level}`}</span>
       </span>
       <span class="continue-arrow" aria-hidden="true">›</span>
     </button>

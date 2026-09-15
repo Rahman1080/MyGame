@@ -25,9 +25,10 @@ export const GAMES: GameDescriptor[] = [
       tagline: "Merge the glow",
       icon: "orb",
       accent: "#E45CFF",
-      status: "soon",
-      hasGauntlet: false,
+      status: "ready",
+      hasGauntlet: true,
     },
+    load: () => import("../games/fusion"),
   },
   {
     meta: {

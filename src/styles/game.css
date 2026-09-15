@@ -844,3 +844,148 @@ button:focus-visible,
   color: var(--dim);
 }
 
+.fusion-shell {
+  gap: 10px;
+}
+
+.fusion-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  position: relative;
+  z-index: 1;
+  margin-top: 4px;
+}
+
+.fusion-word {
+  flex: 1;
+  font-family: Orbitron, sans-serif;
+  font-weight: 800;
+  font-size: 18px;
+  letter-spacing: 0.16em;
+  text-align: center;
+  background: linear-gradient(90deg, var(--cyan), var(--magenta));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.fusion-best {
+  min-width: 62px;
+  text-align: right;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.fusion-best b { color: var(--cyan); font-size: 12px; }
+
+.fusion-hud {
+  flex: 1;
+  text-align: center;
+  min-width: 0;
+}
+.fusion-score {
+  font-family: Orbitron, sans-serif;
+  font-weight: 800;
+  font-size: 24px;
+  line-height: 1;
+  color: #fff;
+}
+.fusion-sub {
+  margin-top: 3px;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+}
+
+.fusion-next {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 62px;
+  justify-content: flex-end;
+}
+
+.fusion-choose {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+  padding-bottom: 24px;
+}
+
+.fusion-blurb {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-align: center;
+}
+
+.fusion-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.fusion-chip {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Orbitron, sans-serif;
+  font-size: 11px;
+  color: var(--chip);
+  border: 1.5px solid var(--chip);
+  background: rgba(7, 8, 13, 0.7);
+  box-shadow: 0 0 12px -4px var(--chip);
+}
+.fusion-chip.small {
+  width: 20px;
+  height: 20px;
+  font-size: 9px;
+}
+
+.fusion-cta {
+  margin-top: 0;
+}
+
+.fusion-note {
+  text-align: center;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--dim);
+}
+
+.fusion-stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+#fusion-canvas {
+  display: block;
+  max-width: 100%;
+  border-radius: 18px;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.fusion-overlay {
+  position: absolute;
+  inset: 0;
+}
+.fusion-overlay:empty { display: none; }
+
+.fusion-overlay .win-card { max-width: 300px; }
+

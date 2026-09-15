@@ -28,4 +28,14 @@ describe("game registry", () => {
     expect(isGameId("glyph")).toBe(true);
     expect(isGameId("nope")).toBe(false);
   });
+
+  it("loads the ready fusion adapter with a deterministic daily config", async () => {
+    const desc = findGame("fusion");
+    expect(desc?.meta.status).toBe("ready");
+    expect(desc?.meta.hasGauntlet).toBe(true);
+    expect(desc?.load).toBeTypeOf("function");
+    const game = (await desc!.load!()).default;
+    expect(game.meta.id).toBe("fusion");
+    expect(game.daily("daily:fusion:2026-09-15")).toEqual({ seed: "daily:fusion:2026-09-15" });
+  });
 });

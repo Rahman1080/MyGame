@@ -1,4 +1,5 @@
 import type { Rng } from "../gen/seededRng";
+import { levelForXp, xpForGame } from "./progression";
 import { findGame } from "./registry";
 import type { SaveService } from "./services/save";
 import type {
@@ -72,10 +73,14 @@ export function startRouter(root: HTMLElement, deps: PlatformDeps): void {
     save: deps.save.get().games[id],
     updateSave: (slice) => {
       deps.save.mutate((draft) => {
-        (draft.games as Record<GameId, AnyGameSave>)[id] = slice;
+        Object.assign((draft.games as Record<GameId, AnyGameSave>)[id], slice);
       });
     },
     report: (result) => {
+      deps.save.mutate((draft) => {
+        draft.profile.xp += xpForGame(result);
+        draft.profile.level = levelForXp(draft.profile.xp);
+      });
       deps.analytics.track("game_completed", {
         game: id,
         score: result.score,
@@ -120,6 +125,9 @@ export function startRouter(root: HTMLElement, deps: PlatformDeps): void {
     clearCurrent();
     const mod = await desc.load();
     current = mod.default;
+    deps.save.mutate((draft) => {
+      draft.profile.lastGame = desc.meta.id;
+    });
     deps.analytics.track("game_switched", { game: desc.meta.id });
     await current.mount(root, contextFor(desc.meta.id));
   };
