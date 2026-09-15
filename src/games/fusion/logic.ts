@@ -86,21 +86,26 @@ export function starsForScore(score: number): number {
   return stars;
 }
 
-function pickSpawnTier(rng: Rng): number {
-  const total = SPAWN_WEIGHTS.reduce((n, w) => n + w, 0);
+function pickSpawnTier(rng: Rng, weights: readonly number[] = SPAWN_WEIGHTS): number {
+  const counts = weights.length > 0 ? weights : SPAWN_WEIGHTS;
+  const total = counts.reduce((sum, w) => sum + Math.max(0, w), 0) || 1;
   let roll = rng() * total;
-  for (let t = 0; t < SPAWN_WEIGHTS.length; t += 1) {
-    roll -= SPAWN_WEIGHTS[t]!;
-    if (roll < 0) return t;
+  for (let t = 0; t < counts.length; t += 1) {
+    roll -= Math.max(0, counts[t]!);
+    if (roll < 0) return Math.min(t, TIER_COUNT - 1);
   }
   return 0;
 }
 
-export function spawnQueue(seed: string, n: number = QUEUE_LEN): number[] {
+export function spawnQueueWith(seed: string, weights: readonly number[], n: number = QUEUE_LEN): number[] {
   const rng = mulberry32(hashString(`fusion:${seed}`));
   const out: number[] = [];
-  for (let i = 0; i < n; i += 1) out.push(pickSpawnTier(rng));
+  for (let i = 0; i < n; i += 1) out.push(pickSpawnTier(rng, weights));
   return out;
+}
+
+export function spawnQueue(seed: string, n: number = QUEUE_LEN): number[] {
+  return spawnQueueWith(seed, SPAWN_WEIGHTS, n);
 }
 
 export function createState(seed: string, queue?: readonly number[]): FusionState {
@@ -264,4 +269,12 @@ export function settle(state: FusionState, limit = 6000): void {
   while (state.falling && state.status === "playing" && state.ticks - start < limit) {
     step(state, 1);
   }
+}
+
+export function dropsUsed(state: FusionState): number {
+  return Math.max(0, state.queueIndex - 2);
+}
+
+export function objectiveMet(state: FusionState, targetTier: number): boolean {
+  return state.maxTier >= Math.max(0, Math.floor(targetTier));
 }

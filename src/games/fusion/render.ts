@@ -60,6 +60,7 @@ export interface DrawOpts {
   aimCol: number | null;
   fx: FusionFx;
   dimmed: boolean;
+  hintCol?: number | null;
 }
 
 export function tierColor(tier: number): string {
@@ -230,6 +231,20 @@ export function drawFusion(view: FusionView, state: FusionState, opts: DrawOpts)
       state.falling.tier,
       !opts.reduced,
     );
+  }
+
+  if (opts.hintCol != null && state.status === "playing") {
+    const hx = (opts.hintCol + 0.5) * COL_WIDTH;
+    ctx.fillStyle = "rgba(228,92,255,0.16)";
+    ctx.fillRect(opts.hintCol * COL_WIDTH + 2, 0, COL_WIDTH - 4, BIN_HEIGHT);
+    ctx.setLineDash([4, 6]);
+    ctx.strokeStyle = "rgba(228,92,255,0.7)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(hx, 14);
+    ctx.lineTo(hx, BIN_HEIGHT - 6);
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   if (opts.aimCol !== null && !state.falling && state.status === "playing") {

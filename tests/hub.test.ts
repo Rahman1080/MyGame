@@ -13,7 +13,7 @@ class Mem implements StorageLike {
   }
 }
 
-const sample: FusionSave = { best: 420, runs: 3, dailyBest: { "2026-09-15": 180 } };
+const sample: FusionSave = { best: 420, runs: 3, dailyBest: { "2026-09-15": 180 }, levels: {} };
 
 describe("hub shared save slice", () => {
   it("keeps the game's slice reference live when the platform merges an update", () => {
@@ -52,6 +52,6 @@ describe("hub shared save slice", () => {
     const dirty = defaultSaveV2() as unknown as { games: Record<string, unknown> };
     dirty.games.fusion = { best: -5, runs: "many", dailyBest: { ok: 12, bad: "no" } };
     const clean = sanitizeV2(JSON.parse(JSON.stringify(dirty)));
-    expect(clean.games.fusion).toEqual({ best: 0, runs: 0, dailyBest: { ok: 12 } });
+    expect(clean.games.fusion).toEqual({ best: 0, runs: 0, dailyBest: { ok: 12 }, levels: {} });
   });
 });

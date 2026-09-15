@@ -18,6 +18,7 @@ import {
   scoreForMerge,
   settle,
   spawnQueue,
+  spawnQueueWith,
   starsForScore,
   step,
   type FusionState,
@@ -92,6 +93,13 @@ describe("fusion spawn queue", () => {
     const q = spawnQueue("range", 400);
     expect(q.every((t) => t >= 0 && t <= MAX_SPAWN_TIER)).toBe(true);
     expect(new Set(q).size).toBeGreaterThan(1);
+  });
+
+  it("honours custom weights deterministically", () => {
+    const weights = [0, 0, 0, 100, 0];
+    const q = spawnQueueWith("weighted", weights, 200);
+    expect(q.every((t) => t === 3)).toBe(true);
+    expect(spawnQueueWith("weighted", weights, 200)).toEqual(q);
   });
 });
 

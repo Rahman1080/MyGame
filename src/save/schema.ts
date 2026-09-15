@@ -137,6 +137,7 @@ export interface FusionSave {
   best: number;
   runs: number;
   dailyBest: Record<string, number>;
+  levels: Record<string, LevelRecord>;
 }
 
 export interface PrismSave {
@@ -208,7 +209,7 @@ export function defaultSaveV2(): SaveV2 {
     profile: defaultProfile(),
     games: {
       glowtrail: defaultSave(),
-      fusion: { best: 0, runs: 0, dailyBest: {} },
+      fusion: { best: 0, runs: 0, dailyBest: {}, levels: {} },
       prism: { solved: [], bestMoves: {}, levels: {} },
       glyph: {
         wins: 0,
@@ -321,6 +322,7 @@ export function sanitizeV2(raw: unknown): SaveV2 {
     d.games.fusion.best = asCount(f.best);
     d.games.fusion.runs = asCount(f.runs);
     d.games.fusion.dailyBest = asNumberMap(f.dailyBest);
+    d.games.fusion.levels = asLevelRecords(f.levels);
   }
   if (g.prism && typeof g.prism === "object") {
     const p = g.prism as Record<string, unknown>;
