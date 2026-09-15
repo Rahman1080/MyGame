@@ -10,8 +10,13 @@ const SYMBOL: Record<TileMark, string> = { correct: "✓", present: "~", absent:
 const MARK_WORD: Record<TileMark, string> = { correct: "correct", present: "present", absent: "absent" };
 
 function tile(letter: string, mark: TileMark | null): string {
-  const stateClass = mark ?? "empty";
-  const label = letter.length > 0 && mark ? `${letter.toUpperCase()} ${MARK_WORD[mark]}` : "empty";
+  const hasLetter = letter.length > 0;
+  const stateClass = mark ?? (hasLetter ? "draft" : "empty");
+  const label = hasLetter
+    ? mark
+      ? `${letter.toUpperCase()} ${MARK_WORD[mark]}`
+      : `${letter.toUpperCase()} pending`
+    : "empty";
   const glyph = mark ? SYMBOL[mark] : "";
   return `<div class="glyph-tile ${stateClass}" role="img" aria-label="${label}"><span class="glyph-letter">${letter.toUpperCase()}</span><span class="glyph-mark" aria-hidden="true">${glyph}</span></div>`;
 }

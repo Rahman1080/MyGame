@@ -1250,6 +1250,7 @@ button:focus-visible,
   opacity: 0.9;
 }
 .glyph-tile.empty { color: transparent; }
+.glyph-tile.draft { color: var(--text); border-color: #2a3548; }
 .glyph-tile.correct {
   border: 2px solid var(--lime);
   background: rgba(156, 255, 79, 0.14);
