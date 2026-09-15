@@ -52,6 +52,11 @@ function state(over: Partial<GlyphState> = {}): GlyphState {
     doubleLetter: null,
     doubleHit: false,
     categoryRevealed: false,
+    mode: "daily",
+    level: 0,
+    hinted: [],
+    timeLimitMs: 0,
+    timedOut: false,
     ...over,
   };
 }

@@ -1339,8 +1339,109 @@ button:focus-visible,
 
 .glyph-card { max-width: 320px; }
 .glyph-practice { font-size: 10px; letter-spacing: 0.14em; color: var(--amber); margin-bottom: 8px; }
+.glyph-practice.reward { color: var(--lime); }
 .glyph-reveal { font-size: 13px; color: var(--muted); margin-bottom: 14px; }
 .glyph-reveal strong { color: var(--text); letter-spacing: 0.08em; }
+
+.glyph-daily-card {
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(156, 255, 79, 0.4);
+  background: linear-gradient(135deg, rgba(156, 255, 79, 0.12), rgba(41, 221, 244, 0.06));
+  color: var(--text);
+}
+.glyph-daily-card.done { border-color: var(--line); background: rgba(41, 221, 244, 0.06); }
+.glyph-daily-label { font-family: Orbitron, sans-serif; letter-spacing: 0.24em; font-size: 13px; color: var(--lime); }
+.glyph-daily-date { font-size: 10px; letter-spacing: 0.12em; color: var(--cyan); text-transform: uppercase; }
+.glyph-daily-status { font-size: 11px; color: var(--muted); }
+
+.glyph-levels {
+  z-index: 1;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: auto;
+  padding-bottom: 16px;
+}
+.glyph-tier { display: flex; flex-direction: column; gap: 8px; }
+.glyph-tier-name { font-size: 10px; letter-spacing: 0.2em; color: var(--dim); }
+.glyph-level-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.glyph-level-tile {
+  position: relative;
+  min-height: 52px;
+  border-radius: 11px;
+  border: 1px solid var(--line);
+  background: #0b1018;
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-family: Orbitron, sans-serif;
+}
+.glyph-level-tile:active { transform: scale(0.96); }
+.glyph-level-num { font-size: 13px; font-weight: 600; }
+.glyph-level-tile.solved { border-color: rgba(156, 255, 79, 0.5); background: rgba(156, 255, 79, 0.09); color: var(--lime); }
+.glyph-level-tile.locked { color: var(--dim); opacity: 0.5; }
+.glyph-level-lock { display: flex; }
+.glyph-level-lock svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.glyph-level-stars { display: flex; gap: 2px; }
+.glyph-level-stars i { width: 5px; height: 5px; border-radius: 1px; background: #24303f; }
+.glyph-level-stars i.on { background: var(--lime); }
+
+.glyph-level-head { z-index: 1; display: flex; gap: 8px; justify-content: center; align-items: center; }
+.glyph-level-tag { font-size: 10px; letter-spacing: 0.16em; color: var(--lime); }
+.glyph-tier-tag { font-size: 10px; letter-spacing: 0.16em; color: var(--dim); }
+
+.glyph-timer-wrap { z-index: 1; width: 100%; max-width: 330px; margin: 0 auto; }
+.glyph-timer { display: flex; align-items: center; gap: 8px; }
+.glyph-timer-bar { flex: 1; height: 6px; border-radius: 999px; background: #131a25; overflow: hidden; }
+.glyph-timer-bar span { display: block; height: 100%; background: var(--cyan); transition: width 0.2s linear; }
+.glyph-timer.low .glyph-timer-bar span { background: var(--magenta); }
+.glyph-timer.low .glyph-timer-clock { color: var(--magenta); }
+.glyph-timer-clock { font-size: 11px; letter-spacing: 0.1em; color: var(--muted); min-width: 34px; text-align: right; }
+
+.glyph-hint-wrap { z-index: 1; min-height: 0; }
+.glyph-hint-row { display: flex; align-items: center; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.glyph-hint-label { font-size: 9px; letter-spacing: 0.14em; color: var(--cyan); }
+.glyph-hint-chip {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  border: 1px solid var(--cyan);
+  background: rgba(41, 221, 244, 0.14);
+  color: var(--cyan);
+  font-family: Orbitron, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+}
+.glyph-hint-btn-wrap { z-index: 1; display: flex; justify-content: center; }
+.glyph-hint-btn {
+  min-height: 40px;
+  padding: 0 22px;
+  border-radius: 999px;
+  border: 1px solid var(--cyan);
+  background: rgba(41, 221, 244, 0.12);
+  color: var(--cyan);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  font-weight: 600;
+}
+.glyph-hint-btn:disabled { border-color: var(--line); background: transparent; color: var(--dim); }
+.glyph-key.hint { background: rgba(41, 221, 244, 0.16); border-color: var(--cyan); color: var(--cyan); }
 
 @keyframes glyph-pop {
   from { transform: scale(0.88); }
@@ -1350,4 +1451,6 @@ button:focus-visible,
 @media (prefers-reduced-motion: reduce) {
   .glyph-row.current .glyph-tile { animation: none; }
   .glyph-key { transition: none; }
+  .glyph-timer-bar span { transition: none; }
+  .glyph-level-tile:active { transform: none; }
 }

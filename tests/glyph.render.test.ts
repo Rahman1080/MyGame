@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { GlyphState } from "../src/games/glyph/logic";
+import { emptyGlyphSave } from "../src/games/glyph/logic";
+import type { GlyphSave } from "../src/save/schema";
 import {
   announceGuess,
   boardHtml,
   cluesHtml,
+  hintButtonHtml,
+  hintChipsHtml,
   keyboardHtml,
+  levelGridHtml,
+  levelHeaderHtml,
   modifierBannerHtml,
+  timerHtml,
 } from "../src/games/glyph/render";
 
 function state(over: Partial<GlyphState> = {}): GlyphState {
@@ -22,6 +29,11 @@ function state(over: Partial<GlyphState> = {}): GlyphState {
     doubleLetter: null,
     doubleHit: false,
     categoryRevealed: false,
+    mode: "daily",
+    level: 0,
+    hinted: [],
+    timeLimitMs: 0,
+    timedOut: false,
     ...over,
   };
 }
@@ -121,5 +133,90 @@ describe("glyph announcements", () => {
     });
     expect(announceGuess(lost)).toContain("TRAIN");
     expect(announceGuess(state())).not.toContain("TRAIN");
+  });
+
+  it("explains a timeout loss", () => {
+    const timedOut = state({ status: "lost", timedOut: true });
+    expect(announceGuess(timedOut)).toContain("Time ran out");
+  });
+});
+
+describe("glyph hint rendering", () => {
+  it("hides the chip row until a hint is taken", () => {
+    expect(hintChipsHtml(state())).toBe("");
+  });
+
+  it("shows taken letters as IN THE WORD chips", () => {
+    const html = hintChipsHtml(state({ hinted: ["t", "r"] }));
+    expect(html).toContain("IN THE WORD");
+    expect(html).toContain(">T<");
+    expect(html).toContain(">R<");
+  });
+
+  it("renders a hint button and disables it once exhausted", () => {
+    expect(hintButtonHtml(state())).toContain('data-action="hint"');
+    expect(hintButtonHtml(state())).not.toContain("disabled");
+    expect(hintButtonHtml(state({ hinted: ["t", "r", "a", "i", "n"] }))).toContain("disabled");
+  });
+
+  it("marks hinted keys as hint", () => {
+    const html = keyboardHtml(state({ hinted: ["t"] }));
+    expect(html).toContain('class="glyph-key hint" data-key="t"');
+    expect(html).toContain('aria-label="T, in the word"');
+  });
+});
+
+describe("glyph timer rendering", () => {
+  it("renders nothing on untimed levels", () => {
+    expect(timerHtml(state({ timeLimitMs: 0 }), 0)).toBe("");
+  });
+
+  it("renders a bar and clock on timed levels", () => {
+    const html = timerHtml(state({ timeLimitMs: 60000 }), 30000);
+    expect(html).toContain("glyph-timer-bar");
+    expect(html).toContain("0:30");
+    expect(html).toContain('role="timer"');
+  });
+
+  it("flags the low-time state", () => {
+    expect(timerHtml(state({ timeLimitMs: 60000 }), 5000)).toContain("glyph-timer low");
+  });
+});
+
+describe("glyph level grid rendering", () => {
+  const save: GlyphSave = {
+    ...emptyGlyphSave(),
+    levels: {
+      "1": { won: true, stars: 3, best: 200, bestTimeMs: 4000, hints: 0, attempts: 1 },
+      "2": { won: false, stars: 0, best: 40, bestTimeMs: null, hints: 1, attempts: 2 },
+    },
+  };
+
+  it("renders seven tier sections and 105 tiles", () => {
+    const html = levelGridHtml(save);
+    expect((html.match(/glyph-tier-name/g) ?? []).length).toBe(7);
+    expect((html.match(/data-level=/g) ?? []).length).toBe(105);
+    expect(html).toContain("EASY");
+    expect(html).toContain("MIND BLOW");
+  });
+
+  it("marks solved, unlocked and locked tiles", () => {
+    const html = levelGridHtml(save);
+    expect(html).toContain('class="glyph-level-tile solved" data-level="1"');
+    expect(html).toContain('class="glyph-level-tile" data-level="2"');
+    expect(html).toContain('class="glyph-level-tile locked" data-level="3"');
+    expect(html).toContain("Level 3, EASY, locked");
+  });
+
+  it("describes solved tiles for assistive tech", () => {
+    const html = levelGridHtml(save);
+    expect(html).toContain("Level 1, EASY, solved, 3 stars, best 200 points");
+  });
+
+  it("shows the level header only in level mode", () => {
+    expect(levelHeaderHtml(state({ mode: "daily", level: 0 }))).toBe("");
+    const html = levelHeaderHtml(state({ mode: "level", level: 16 }));
+    expect(html).toContain("LEVEL 16");
+    expect(html).toContain("NORMAL");
   });
 });

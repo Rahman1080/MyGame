@@ -1,6 +1,7 @@
 import { hashString, mulberry32 } from "../../gen/seededRng";
 import { dailySeed } from "../../platform/dailySeed";
-import type { GlyphDailyRecord, GlyphSave } from "../../save/schema";
+import { tierForLevel, timeLimitMs, type Tier } from "../../platform/levels";
+import type { GlyphDailyRecord, GlyphSave, LevelRecord } from "../../save/schema";
 import { ANSWER_WORDS, VALID_WORDS } from "./words";
 
 export const GLYPH_WORD_LENGTH = 5;
@@ -8,9 +9,13 @@ export const GLYPH_MAX_GUESSES = 6;
 export const GLYPH_DAILY_ID = "glyph-daily";
 export const ENERGY_PER_CLUE = 8;
 export const GLYPH_MAX_CLUES = 2;
+export const GLYPH_LEVELS = 105;
+export const GLYPH_HINT_PENALTY = 25;
 
 export const MODIFIERS = ["clear", "double", "energy", "category"] as const;
 export type ModifierId = (typeof MODIFIERS)[number];
+
+export type GlyphMode = "daily" | "level";
 
 export const MODIFIER_LABELS: Record<ModifierId, string> = {
   clear: "CLEAR SKIES",
@@ -51,6 +56,11 @@ export interface GlyphState {
   doubleLetter: string | null;
   doubleHit: boolean;
   categoryRevealed: boolean;
+  mode: GlyphMode;
+  level: number;
+  hinted: string[];
+  timeLimitMs: number;
+  timedOut: boolean;
 }
 
 export type GuessError = "length" | "letters" | "unknown" | "finished";
@@ -76,6 +86,19 @@ export interface GlyphResult {
   modifier: ModifierId;
   score: number;
   stars: number;
+  hints: number;
+  mode: GlyphMode;
+  level: number;
+  timeMs: number;
+}
+
+export interface GlyphLevelConfig {
+  level: number;
+  tier: Tier;
+  answer: string;
+  category: string;
+  modifier: ModifierId;
+  timeLimitMs: number;
 }
 
 export const GLYPH_SCORE = {
@@ -88,9 +111,35 @@ export const GLYPH_SCORE = {
   streakMax: 10,
 } as const;
 
+export type KeyMark = TileMark | "hint";
+
 const VALID_SET = new Set<string>(VALID_WORDS);
 const ANSWER_MAP = new Map<string, string>(ANSWER_WORDS.map((entry) => [entry.word, entry.category]));
-const RANK: Record<TileMark, number> = { absent: 0, present: 1, correct: 2 };
+const RANK: Record<KeyMark, number> = { absent: 0, hint: 1, present: 2, correct: 3 };
+
+const TIER_MODIFIERS: Record<Tier, readonly ModifierId[]> = {
+  easy: ["clear"],
+  normal: ["clear", "category"],
+  medium: ["category", "double"],
+  hard: ["double", "energy"],
+  super: ["energy", "double"],
+  extra: ["energy", "category"],
+  mind: ["double", "energy"],
+};
+
+function levelAnswerOrder(): string[] {
+  const rng = mulberry32(hashString("glyph:level:order"));
+  const words = ANSWER_WORDS.map((entry) => entry.word);
+  for (let i = words.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    const swap = words[i]!;
+    words[i] = words[j]!;
+    words[j] = swap;
+  }
+  return words;
+}
+
+const LEVEL_ORDER = levelAnswerOrder();
 
 export function isWellFormedWord(word: string): boolean {
   return /^[a-z]{5}$/.test(word);
@@ -157,10 +206,40 @@ export function dailyConfig(date: string): DailyConfig {
   return { date, answer: entry.word, category: entry.category, modifier };
 }
 
-export function startDaily(date: string): GlyphState {
-  const config = dailyConfig(date);
+function modifierForTier(tier: Tier, rng: () => number): ModifierId {
+  const pool = TIER_MODIFIERS[tier];
+  return pool[Math.floor(rng() * pool.length)]!;
+}
+
+export function levelConfig(level: number): GlyphLevelConfig {
+  const safe = Math.min(GLYPH_LEVELS, Math.max(1, Math.floor(level)));
+  const answer = LEVEL_ORDER[safe - 1]!;
+  const tier = tierForLevel(safe, GLYPH_LEVELS);
+  const rng = mulberry32(hashString(`glyph:level:${safe}`));
   return {
-    date,
+    level: safe,
+    tier,
+    answer,
+    category: categoryFor(answer),
+    modifier: modifierForTier(tier, rng),
+    timeLimitMs: timeLimitMs(safe, GLYPH_LEVELS),
+  };
+}
+
+export function levelAnswer(level: number): string {
+  return LEVEL_ORDER[Math.min(GLYPH_LEVELS, Math.max(1, Math.floor(level))) - 1]!;
+}
+
+export function levelTier(level: number): Tier {
+  return tierForLevel(Math.min(GLYPH_LEVELS, Math.max(1, Math.floor(level))), GLYPH_LEVELS);
+}
+
+function stateFromConfig(
+  config: { answer: string; category: string; modifier: ModifierId },
+  over: Partial<GlyphState>,
+): GlyphState {
+  return {
+    date: config.answer,
     answer: config.answer,
     category: config.category,
     modifier: config.modifier,
@@ -172,7 +251,28 @@ export function startDaily(date: string): GlyphState {
     doubleLetter: config.modifier === "double" ? doubledLetter(config.answer) : null,
     doubleHit: false,
     categoryRevealed: false,
+    mode: "daily",
+    level: 0,
+    hinted: [],
+    timeLimitMs: 0,
+    timedOut: false,
+    ...over,
   };
+}
+
+export function startDaily(date: string): GlyphState {
+  const config = dailyConfig(date);
+  return stateFromConfig(config, { date, mode: "daily", level: 0 });
+}
+
+export function startLevel(level: number): GlyphState {
+  const config = levelConfig(level);
+  return stateFromConfig(config, {
+    date: `level-${config.level}`,
+    mode: "level",
+    level: config.level,
+    timeLimitMs: config.timeLimitMs,
+  });
 }
 
 function applyModifierProgress(state: GlyphState): GlyphState {
@@ -233,8 +333,9 @@ export function isLost(state: GlyphState): boolean {
   return state.status === "lost";
 }
 
-export function keyboardState(state: GlyphState): Record<string, TileMark> {
-  const out: Record<string, TileMark> = {};
+export function keyboardState(state: GlyphState): Record<string, KeyMark> {
+  const out: Record<string, KeyMark> = {};
+  for (const ch of state.hinted) out[ch] = "hint";
   for (const guess of state.guesses) {
     for (let i = 0; i < guess.word.length; i += 1) {
       const ch = guess.word[i]!;
@@ -246,24 +347,61 @@ export function keyboardState(state: GlyphState): Record<string, TileMark> {
   return out;
 }
 
+export function hintedLetters(state: GlyphState): string[] {
+  return state.hinted.slice();
+}
+
+export function hintableLetters(state: GlyphState): string[] {
+  if (state.status !== "playing") return [];
+  const known = new Set<string>();
+  for (const guess of state.guesses) {
+    for (let i = 0; i < guess.word.length; i += 1) {
+      if (guess.marks[i] === "correct") known.add(guess.word[i]!);
+    }
+  }
+  const hinted = new Set(state.hinted);
+  const out: string[] = [];
+  for (const ch of state.answer) {
+    if (known.has(ch) || hinted.has(ch) || out.includes(ch)) continue;
+    out.push(ch);
+  }
+  return out;
+}
+
+export function canHint(state: GlyphState): boolean {
+  return state.status === "playing" && hintableLetters(state).length > 0;
+}
+
+export function takeHint(state: GlyphState): GlyphState {
+  if (state.status !== "playing") return state;
+  const letter = hintableLetters(state)[0];
+  if (letter === undefined) return state;
+  return { ...state, hinted: [...state.hinted, letter] };
+}
+
+export function expireTimer(state: GlyphState): GlyphState {
+  if (state.status !== "playing" || state.timeLimitMs <= 0) return state;
+  return { ...state, status: "lost", timedOut: true };
+}
+
 export function scoreGlyph(state: GlyphState, streak = 0): number {
   if (state.status !== "won") return GLYPH_SCORE.lossBase;
   let score = GLYPH_SCORE.winBase + remainingGuesses(state) * GLYPH_SCORE.perGuessLeft;
   if (state.guesses.length === 1) score += GLYPH_SCORE.perfect;
   if (state.modifier === "double" && state.doubleHit) score += GLYPH_SCORE.doubleBonus;
   score += Math.min(Math.max(0, streak), GLYPH_SCORE.streakMax) * GLYPH_SCORE.streakStep;
-  return score;
+  score -= state.hinted.length * GLYPH_HINT_PENALTY;
+  return Math.max(0, score);
 }
 
 export function starsForGlyph(state: GlyphState): number {
   if (state.status !== "won") return 0;
   const used = state.guesses.length;
-  if (used <= 2) return 3;
-  if (used <= 4) return 2;
-  return 1;
+  const base = used <= 2 ? 3 : used <= 4 ? 2 : 1;
+  return state.hinted.length > 0 ? Math.min(base, 2) : base;
 }
 
-export function finalResult(state: GlyphState, streak = 0): GlyphResult {
+export function finalResult(state: GlyphState, streak = 0, elapsedMs = 0): GlyphResult {
   return {
     date: state.date,
     won: state.status === "won",
@@ -272,6 +410,10 @@ export function finalResult(state: GlyphState, streak = 0): GlyphResult {
     modifier: state.modifier,
     score: scoreGlyph(state, streak),
     stars: starsForGlyph(state),
+    hints: state.hinted.length,
+    mode: state.mode,
+    level: state.level,
+    timeMs: Math.max(0, Math.floor(elapsedMs)),
   };
 }
 
@@ -327,6 +469,7 @@ export function emptyGlyphSave(): GlyphSave {
     playDates: [],
     lastResult: null,
     daily: {},
+    levels: {},
   };
 }
 
@@ -347,6 +490,7 @@ export function recordGlyphResult(save: GlyphSave, result: GlyphResult): GlyphSa
       guesses: result.guesses,
       modifier: result.modifier,
       score: result.score,
+      hints: result.hints,
     },
   };
   const playDates = save.playDates.includes(result.date) ? save.playDates : [...save.playDates, result.date];
@@ -365,5 +509,62 @@ export function recordGlyphResult(save: GlyphSave, result: GlyphResult): GlyphSa
     playDates,
     lastResult: resultSummary(result),
     daily,
+    levels: save.levels,
   };
+}
+
+export function levelRecordFor(save: GlyphSave, level: number): LevelRecord | null {
+  return save.levels[String(level)] ?? null;
+}
+
+export function isLevelSolved(save: GlyphSave, level: number): boolean {
+  return save.levels[String(level)]?.won === true;
+}
+
+export function isLevelUnlocked(save: GlyphSave, level: number): boolean {
+  const safe = Math.max(1, Math.floor(level));
+  if (safe <= 1) return true;
+  return isLevelSolved(save, safe - 1);
+}
+
+export function isLevelFirstWin(save: GlyphSave, level: number): boolean {
+  return !isLevelSolved(save, level);
+}
+
+export function nextLevel(save: GlyphSave, from: number): number {
+  const safe = Math.max(1, Math.floor(from));
+  if (safe >= GLYPH_LEVELS) return safe;
+  return isLevelUnlocked(save, safe + 1) ? safe + 1 : safe;
+}
+
+export function recordGlyphLevelResult(save: GlyphSave, result: GlyphResult): GlyphSave {
+  if (result.mode !== "level" || result.level < 1) return save;
+  const key = String(result.level);
+  const prev = save.levels[key];
+  const won = prev?.won === true || result.won;
+  const best = Math.max(prev?.best ?? 0, result.score);
+  let bestTimeMs = prev?.bestTimeMs ?? null;
+  if (result.won && result.timeMs > 0) {
+    bestTimeMs = bestTimeMs === null ? result.timeMs : Math.min(bestTimeMs, result.timeMs);
+  }
+  const record: LevelRecord = {
+    won,
+    stars: Math.max(prev?.stars ?? 0, result.stars),
+    best,
+    bestTimeMs,
+    hints: (prev?.hints ?? 0) + result.hints,
+    attempts: (prev?.attempts ?? 0) + 1,
+  };
+  return { ...save, levels: { ...save.levels, [key]: record } };
+}
+
+export function buildLevelShare(result: GlyphResult): string {
+  const outcome = result.won
+    ? `SOLVED ${result.guesses}/${GLYPH_MAX_GUESSES}`
+    : `MISSED 0/${GLYPH_MAX_GUESSES}`;
+  return [
+    `GLYPH LEVEL ${result.level} - ${result.won ? "CLEARED" : "FAILED"}`,
+    `${outcome} - ${result.score} pts - ${result.stars} stars`,
+    "GLOWTRAIL ARCADE",
+  ].join("\n");
 }

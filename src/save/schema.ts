@@ -144,11 +144,21 @@ export interface PrismSave {
   bestMoves: Record<string, number>;
 }
 
+export interface LevelRecord {
+  won: boolean;
+  stars: number;
+  best: number;
+  bestTimeMs: number | null;
+  hints: number;
+  attempts: number;
+}
+
 export interface GlyphDailyRecord {
   won: boolean;
   guesses: number;
   modifier: string;
   score: number;
+  hints: number;
 }
 
 export interface GlyphSave {
@@ -160,6 +170,7 @@ export interface GlyphSave {
   playDates: string[];
   lastResult: string | null;
   daily: Record<string, GlyphDailyRecord>;
+  levels: Record<string, LevelRecord>;
 }
 
 export interface SaveV2 {
@@ -207,6 +218,7 @@ export function defaultSaveV2(): SaveV2 {
         playDates: [],
         lastResult: null,
         daily: {},
+        levels: {},
       },
     },
   };
@@ -242,6 +254,30 @@ function asGlyphDaily(value: unknown): Record<string, GlyphDailyRecord> {
       guesses: asCount(e.guesses),
       modifier: typeof e.modifier === "string" ? e.modifier : "clear",
       score: asCount(e.score),
+      hints: asCount(e.hints),
+    };
+  }
+  return out;
+}
+
+function asLevelRecords(value: unknown): Record<string, LevelRecord> {
+  const out: Record<string, LevelRecord> = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+    const n = Number(key);
+    if (!Number.isInteger(n) || n < 1) continue;
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    out[String(n)] = {
+      won: e.won === true,
+      stars: clampStar(e.stars),
+      best: asCount(e.best),
+      bestTimeMs:
+        typeof e.bestTimeMs === "number" && Number.isFinite(e.bestTimeMs) && e.bestTimeMs >= 0
+          ? Math.floor(e.bestTimeMs)
+          : null,
+      hints: asCount(e.hints),
+      attempts: asCount(e.attempts),
     };
   }
   return out;
@@ -300,6 +336,7 @@ export function sanitizeV2(raw: unknown): SaveV2 {
     d.games.glyph.playDates = asStringArray(w.playDates);
     d.games.glyph.lastResult = typeof w.lastResult === "string" ? w.lastResult : null;
     d.games.glyph.daily = asGlyphDaily(w.daily);
+    d.games.glyph.levels = asLevelRecords(w.levels);
   }
   d.version = 2;
   return d;
