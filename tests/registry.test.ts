@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { findGame, GAMES, isGameId } from "../src/platform/registry";
 
 describe("game registry", () => {
-  it("exposes the four M1 game ids in display order", () => {
-    expect(GAMES.map((g) => g.meta.id)).toEqual(["glowtrail", "fusion", "prism", "glyph"]);
+  it("exposes the five arcade game ids in display order", () => {
+    expect(GAMES.map((g) => g.meta.id)).toEqual(["glowtrail", "fusion", "prism", "glyph", "blocks"]);
   });
 
   it("every descriptor has display metadata", () => {
@@ -47,5 +47,17 @@ describe("game registry", () => {
     const game = (await desc!.load!()).default;
     expect(game.meta.id).toBe("prism");
     expect(game.daily("daily:prism:2026-09-15")).toEqual({ seed: "daily:prism:2026-09-15" });
+  });
+
+  it("loads the ready blocks adapter with its own daily mode", async () => {
+    const desc = findGame("blocks");
+    expect(desc?.meta.status).toBe("ready");
+    expect(desc?.meta.name).toBe("NEON BLOCKS");
+    expect(desc?.meta.tagline).toBe("Block Puzzle");
+    expect(desc?.meta.hasGauntlet).toBe(false);
+    expect(desc?.load).toBeTypeOf("function");
+    const game = (await desc!.load!()).default;
+    expect(game.meta.id).toBe("blocks");
+    expect(game.daily("daily:blocks:2026-09-15")).toEqual({ date: "2026-09-15", seed: "daily:blocks:2026-09-15" });
   });
 });

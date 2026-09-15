@@ -54,6 +54,18 @@ export const GAMES: GameDescriptor[] = [
     },
     load: () => import("../games/glyph"),
   },
+  {
+    meta: {
+      id: "blocks",
+      name: "NEON BLOCKS",
+      tagline: "Block Puzzle",
+      icon: "blocks",
+      accent: "#7C6BFF",
+      status: "ready",
+      hasGauntlet: false,
+    },
+    load: () => import("../games/blocks"),
+  },
 ];
 
 export function findGame(id: string): GameDescriptor | undefined {

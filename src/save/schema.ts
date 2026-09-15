@@ -175,6 +175,23 @@ export interface GlyphSave {
   levels: Record<string, LevelRecord>;
 }
 
+/** One scored NEON BLOCKS daily run, keyed by local date. */
+export interface BlocksDailyRecord {
+  score: number;
+  lines: number;
+  stars: number;
+}
+
+export interface BlocksSave {
+  best: number;
+  runs: number;
+  lines: number;
+  bestCombo: number;
+  dailyStreak: number;
+  bestDailyStreak: number;
+  daily: Record<string, BlocksDailyRecord>;
+}
+
 export interface SaveV2 {
   version: 2;
   profile: ProfileSave;
@@ -183,6 +200,7 @@ export interface SaveV2 {
     fusion: FusionSave;
     prism: PrismSave;
     glyph: GlyphSave;
+    blocks: BlocksSave;
   };
 }
 
@@ -222,6 +240,15 @@ export function defaultSaveV2(): SaveV2 {
         daily: {},
         levels: {},
       },
+      blocks: {
+        best: 0,
+        runs: 0,
+        lines: 0,
+        bestCombo: 0,
+        dailyStreak: 0,
+        bestDailyStreak: 0,
+        daily: {},
+      },
     },
   };
 }
@@ -257,6 +284,22 @@ function asGlyphDaily(value: unknown): Record<string, GlyphDailyRecord> {
       modifier: typeof e.modifier === "string" ? e.modifier : "clear",
       score: asCount(e.score),
       hints: asCount(e.hints),
+    };
+  }
+  return out;
+}
+
+function asBlocksDaily(value: unknown): Record<string, BlocksDailyRecord> {
+  const out: Record<string, BlocksDailyRecord> = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [date, entry] of Object.entries(value as Record<string, unknown>)) {
+    if (!isDateString(date)) continue;
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    out[date] = {
+      score: asCount(e.score),
+      lines: asCount(e.lines),
+      stars: clampStar(e.stars),
     };
   }
   return out;
@@ -341,6 +384,16 @@ export function sanitizeV2(raw: unknown): SaveV2 {
     d.games.glyph.lastResult = typeof w.lastResult === "string" ? w.lastResult : null;
     d.games.glyph.daily = asGlyphDaily(w.daily);
     d.games.glyph.levels = asLevelRecords(w.levels);
+  }
+  if (g.blocks && typeof g.blocks === "object") {
+    const b = g.blocks as Record<string, unknown>;
+    d.games.blocks.best = asCount(b.best);
+    d.games.blocks.runs = asCount(b.runs);
+    d.games.blocks.lines = asCount(b.lines);
+    d.games.blocks.bestCombo = asCount(b.bestCombo);
+    d.games.blocks.dailyStreak = asCount(b.dailyStreak);
+    d.games.blocks.bestDailyStreak = asCount(b.bestDailyStreak);
+    d.games.blocks.daily = asBlocksDaily(b.daily);
   }
   d.version = 2;
   return d;
