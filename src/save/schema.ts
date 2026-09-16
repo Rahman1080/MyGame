@@ -200,12 +200,17 @@ export interface ArrowsDailyRecord {
   stars: number;
 }
 
+/** Schema version of the arrows slice; bump to invalidate older progress. */
+export const ARROWS_SAVE_VERSION = 2;
+
 export interface ArrowsSave {
+  version: number;
   levels: Record<string, LevelRecord>;
   best: number;
   runs: number;
   boards: number;
   bestRun: number;
+  perfect: number;
   dailyStreak: number;
   bestDailyStreak: number;
   daily: Record<string, ArrowsDailyRecord>;
@@ -270,11 +275,13 @@ export function defaultSaveV2(): SaveV2 {
         daily: {},
       },
       arrows: {
+        version: ARROWS_SAVE_VERSION,
         levels: {},
         best: 0,
         runs: 0,
         boards: 0,
         bestRun: 0,
+        perfect: 0,
         dailyStreak: 0,
         bestDailyStreak: 0,
         daily: {},
@@ -443,14 +450,19 @@ export function sanitizeV2(raw: unknown): SaveV2 {
   }
   if (g.arrows && typeof g.arrows === "object") {
     const a = g.arrows as Record<string, unknown>;
-    d.games.arrows.levels = asLevelRecords(a.levels);
-    d.games.arrows.best = asCount(a.best);
-    d.games.arrows.runs = asCount(a.runs);
-    d.games.arrows.boards = asCount(a.boards);
-    d.games.arrows.bestRun = asCount(a.bestRun);
-    d.games.arrows.dailyStreak = asCount(a.dailyStreak);
-    d.games.arrows.bestDailyStreak = asCount(a.bestDailyStreak);
-    d.games.arrows.daily = asArrowsDaily(a.daily);
+    // Older arrows boards used a step-slide model and are invalid here.
+    if (asCount(a.version) === ARROWS_SAVE_VERSION) {
+      d.games.arrows.version = ARROWS_SAVE_VERSION;
+      d.games.arrows.levels = asLevelRecords(a.levels);
+      d.games.arrows.best = asCount(a.best);
+      d.games.arrows.runs = asCount(a.runs);
+      d.games.arrows.boards = asCount(a.boards);
+      d.games.arrows.bestRun = asCount(a.bestRun);
+      d.games.arrows.perfect = asCount(a.perfect);
+      d.games.arrows.dailyStreak = asCount(a.dailyStreak);
+      d.games.arrows.bestDailyStreak = asCount(a.bestDailyStreak);
+      d.games.arrows.daily = asArrowsDaily(a.daily);
+    }
   }
   d.version = 2;
   return d;

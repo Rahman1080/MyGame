@@ -73,4 +73,45 @@ describe("save v2 migration", () => {
     mem.setItem(SAVE_KEY_V2, JSON.stringify(first));
     expect(loadSaveV2(mem).profile.xp).toBe(999);
   });
+
+  it("resets the arrows slice when its version is stale", () => {
+    const mem = new Mem();
+    const stale = {
+      version: 2,
+      games: {
+        arrows: {
+          version: 1,
+          levels: { "1": { won: true, stars: 3, best: 1, bestTimeMs: null, hints: 0, attempts: 1 } },
+          perfect: 9,
+          daily: { "2026-09-10": { solved: true, launches: 3, stars: 3 } },
+        },
+      },
+    };
+    mem.setItem(SAVE_KEY_V2, JSON.stringify(stale));
+    const save = loadSaveV2(mem);
+    expect(save.games.arrows.version).toBe(2);
+    expect(save.games.arrows.levels).toEqual({});
+    expect(save.games.arrows.perfect).toBe(0);
+    expect(save.games.arrows.daily).toEqual({});
+  });
+
+  it("keeps the arrows slice when its version matches", () => {
+    const mem = new Mem();
+    const ok = {
+      version: 2,
+      games: {
+        arrows: {
+          version: 2,
+          levels: { "1": { won: true, stars: 3, best: 1, bestTimeMs: null, hints: 0, attempts: 1 } },
+          perfect: 1,
+          daily: { "2026-09-10": { solved: true, launches: 3, stars: 3 } },
+        },
+      },
+    };
+    mem.setItem(SAVE_KEY_V2, JSON.stringify(ok));
+    const save = loadSaveV2(mem);
+    expect(save.games.arrows.perfect).toBe(1);
+    expect(save.games.arrows.levels["1"]?.stars).toBe(3);
+    expect(save.games.arrows.daily["2026-09-10"]?.solved).toBe(true);
+  });
 });
