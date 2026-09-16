@@ -2,6 +2,7 @@ import { synth } from "../../audio/synth";
 import { hapticTap } from "../../audio/haptics";
 import { recordHighScore } from "../../save/storage";
 import type { SaveData } from "../../save/schema";
+import { fitBox } from "../canvasFit";
 import {
   createSnakeGame,
   setDirection,
@@ -28,6 +29,7 @@ export class SnakeController {
   private arcadeSave: { best: number } | null = null;
   private onArcadeSave: ((s: { best: number }) => void) | null = null;
   private abortController: AbortController | null = null;
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor() {
     this.state = createSnakeGame(20, 20, 0, "normal");
@@ -95,7 +97,7 @@ export class SnakeController {
         </div>
 
         <div class="board-wrap" style="align-items: center; justify-content: center; position: relative;">
-          <canvas id="snake-canvas" width="360" height="360" style="touch-action: none; border-radius: 12px; max-width: 92vw; max-height: 50vh;"></canvas>
+          <canvas id="snake-canvas" width="360" height="360" style="touch-action: none; border-radius: 12px;"></canvas>
           <div id="snake-gameover" class="overlay" style="display: none;">
             <div class="win-card">
               <h2>GAME OVER</h2>
@@ -130,11 +132,22 @@ export class SnakeController {
   private resizeCanvas(): void {
     if (!this.canvas || !this.ctx) return;
     const dpr = window.devicePixelRatio || 1;
-    const size = Math.min(360, Math.floor(window.innerWidth * 0.9), Math.floor(window.innerHeight * 0.46));
-    this.canvas.width = size * dpr;
-    this.canvas.height = size * dpr;
-    this.canvas.style.width = `${size}px`;
-    this.canvas.style.height = `${size}px`;
+
+    // Measure the actual board area instead of the viewport: on short or
+    // landscape screens the flex container is much smaller than `window`, and a
+    // buffer that disagrees with the rendered box gets scaled by CSS, which
+    // distorts the board.
+    const host = this.canvas.parentElement?.getBoundingClientRect();
+    const availW = host && host.width > 0 ? host.width : window.innerWidth * 0.9;
+    const availH = host && host.height > 0 ? host.height : window.innerHeight * 0.46;
+    const { w, h } = fitBox(availW, availH, 1, 360);
+
+    const bufferW = Math.round(w * dpr);
+    const bufferH = Math.round(h * dpr);
+    if (this.canvas.width !== bufferW) this.canvas.width = bufferW;
+    if (this.canvas.height !== bufferH) this.canvas.height = bufferH;
+    this.canvas.style.width = `${w}px`;
+    this.canvas.style.height = `${h}px`;
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(dpr, dpr);
   }
@@ -263,6 +276,12 @@ export class SnakeController {
     // Keyboard controls
     window.addEventListener("keydown", this.handleKeyDown, { signal });
     window.addEventListener("resize", () => this.resizeCanvas(), { signal });
+
+    if (this.canvas?.parentElement && typeof ResizeObserver !== "undefined") {
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = new ResizeObserver(() => this.resizeCanvas());
+      this.resizeObserver.observe(this.canvas.parentElement);
+    }
   }
 
   private handleKeyDown = (e: KeyboardEvent): void => {
@@ -399,6 +418,8 @@ export class SnakeController {
     }
     this.abortController?.abort();
     this.abortController = null;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     if (this.container) {
       this.container.innerHTML = "";
     }

@@ -2,6 +2,7 @@ import { synth } from "../../audio/synth";
 import { hapticTap } from "../../audio/haptics";
 import { recordHighScore } from "../../save/storage";
 import type { SaveData } from "../../save/schema";
+import { fitBox } from "../canvasFit";
 import {
   createBreakerGame,
   fireLaser,
@@ -30,6 +31,7 @@ export class BreakerController {
   private arcadeSave: { best: number } | null = null;
   private onArcadeSave: ((s: { best: number }) => void) | null = null;
   private abortController: AbortController | null = null;
+  private resizeObserver: ResizeObserver | null = null;
   private freezeFrames = 0;
   private gameOverHandled = false;
   private isPointerAiming = false;
@@ -99,7 +101,7 @@ export class BreakerController {
             <button class="icon-btn sm" data-act="speed-btn" id="breaker-float-speed" title="Fast Forward (1x, 2x, 3x, 5x)" style="color: #FFD700; background: rgba(7, 8, 14, 0.9); backdrop-filter: blur(6px); font-weight: 800; border: 1.5px solid rgba(255, 215, 0, 0.6); padding: 5px 12px; border-radius: 20px; font-size: 12px; box-shadow: 0 0 12px rgba(255, 215, 0, 0.35); cursor: pointer;">⏩ 1x</button>
             <button class="icon-btn sm" data-act="recall-btn" id="breaker-float-recall" title="Recall all balls immediately" style="color: #00F2FF; background: rgba(7, 8, 14, 0.9); backdrop-filter: blur(6px); font-weight: 800; border: 1.5px solid rgba(0, 242, 255, 0.6); padding: 5px 12px; border-radius: 20px; font-size: 12px; box-shadow: 0 0 12px rgba(0, 242, 255, 0.35); cursor: pointer;">↩ Recall</button>
           </div>
-          <canvas id="breaker-canvas" width="360" height="480" style="touch-action: none; border-radius: 10px; max-width: 94vw; max-height: 56vh; cursor: crosshair;"></canvas>
+          <canvas id="breaker-canvas" width="360" height="480" style="touch-action: none; border-radius: 10px; cursor: crosshair;"></canvas>
           <div id="breaker-gameover" class="overlay" style="display: none;">
             <div class="win-card">
               <h2>STAGE CLEARED</h2>
@@ -133,17 +135,19 @@ export class BreakerController {
   private resizeCanvas(): void {
     if (!this.canvas || !this.ctx) return;
     const dpr = window.devicePixelRatio || 1;
-    const maxW = Math.min(360, Math.floor(window.innerWidth * 0.92));
-    const maxH = Math.floor(window.innerHeight * 0.54);
-    const aspect = 480 / 360;
-    let w = maxW;
-    let h = Math.floor(w * aspect);
-    if (h > maxH) {
-      h = maxH;
-      w = Math.floor(h / aspect);
-    }
-    this.canvas.width = w * dpr;
-    this.canvas.height = h * dpr;
+
+    // The renderer draws in a fixed 360x480 space, so the buffer must keep the
+    // 360:480 ratio inside the measured board area. Deriving the box from
+    // `window` let CSS clamp only one axis, which stretched the play field.
+    const host = this.canvas.parentElement?.getBoundingClientRect();
+    const availW = host && host.width > 0 ? host.width : window.innerWidth * 0.92;
+    const availH = host && host.height > 0 ? host.height : window.innerHeight * 0.54;
+    const { w, h } = fitBox(availW, availH, 360 / 480, 480);
+
+    const bufferW = Math.round(w * dpr);
+    const bufferH = Math.round(h * dpr);
+    if (this.canvas.width !== bufferW) this.canvas.width = bufferW;
+    if (this.canvas.height !== bufferH) this.canvas.height = bufferH;
     this.canvas.style.width = `${w}px`;
     this.canvas.style.height = `${h}px`;
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -305,6 +309,12 @@ export class BreakerController {
     window.addEventListener("keydown", this.handleKeyDown, { signal });
     window.addEventListener("keyup", this.handleKeyUp, { signal });
     window.addEventListener("resize", () => this.resizeCanvas(), { signal });
+
+    if (this.canvas?.parentElement && typeof ResizeObserver !== "undefined") {
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = new ResizeObserver(() => this.resizeCanvas());
+      this.resizeObserver.observe(this.canvas.parentElement);
+    }
   }
 
   private handleKeyDown = (e: KeyboardEvent): void => {
@@ -546,6 +556,8 @@ export class BreakerController {
     }
     this.abortController?.abort();
     this.abortController = null;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     if (this.container) {
       this.container.innerHTML = "";
     }

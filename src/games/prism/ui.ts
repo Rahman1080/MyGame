@@ -761,6 +761,47 @@ function onClick(e: MouseEvent): void {
   }
 }
 
+function onKeyDown(e: KeyboardEvent): void {
+  if (!ctx) return;
+
+  if (e.key === "Escape") {
+    if (screen === "play" && selected !== null) {
+      selected = null;
+      draw();
+      e.preventDefault();
+      return;
+    }
+    if (handleBack()) e.preventDefault();
+    return;
+  }
+
+  if (screen !== "play" || !state || moving) return;
+
+  if (e.key >= "1" && e.key <= "9") {
+    handleTap(Number(e.key) - 1);
+    e.preventDefault();
+  } else if (e.key === "0") {
+    if (state.tubes.length >= 10) {
+      handleTap(9);
+      e.preventDefault();
+    }
+  } else if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+    const n = state.tubes.length;
+    const step = e.key === "ArrowRight" ? 1 : -1;
+    let idx = selected === null ? (step === 1 ? -1 : 0) : selected;
+    for (let i = 0; i < n; i++) {
+      idx = (idx + step + n) % n;
+      if (state.tubes[idx]!.length > 0) {
+        selected = idx;
+        ctx.audio.tap();
+        draw();
+        break;
+      }
+    }
+    e.preventDefault();
+  }
+}
+
 function onResize(): void {
   if (screen === "choose" || !canvasEl || !state) return;
   layout = prismLayout(state.tubes.length, state.capacity);
@@ -802,6 +843,7 @@ export function mountPrism(root: HTMLElement, context: GameContext<PrismSave>): 
   const { signal } = ac;
   app.addEventListener("click", onClick, { signal });
   window.addEventListener("resize", onResize, { signal });
+  window.addEventListener("keydown", onKeyDown, { signal });
   setBackHandler(handleBack);
   build();
   lastMs = performance.now();
