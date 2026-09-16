@@ -326,7 +326,9 @@
    controllers own the sizing. */
 #snake-canvas,
 #matrix-canvas,
-#breaker-canvas {
+#breaker-canvas,
+#meow-canvas,
+#ws-canvas {
   max-width: 100%;
   max-height: 100%;
 }

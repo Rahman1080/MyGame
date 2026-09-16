@@ -6,6 +6,7 @@ import { synth } from "../../audio/synth";
 import { hapticTap } from "../../audio/haptics";
 import { recordHighScore } from "../../save/storage";
 import type { BasicScoreSave, SaveData } from "../../save/schema";
+import { fitBox } from "../canvasFit";
 import { MeowdokuEngine } from "./engine";
 import { MeowdokuRenderer } from "./render";
 
@@ -24,6 +25,7 @@ export class MeowdokuController {
   private arcadeSave: BasicScoreSave | null = null;
   private onArcadeSave: ((s: BasicScoreSave) => void) | null = null;
   private abortController: AbortController | null = null;
+  private resizeObserver: ResizeObserver | null = null;
   private levelSeed = "";
 
   private selectedCell: { row: number; col: number } | null = null;
@@ -109,7 +111,7 @@ export class MeowdokuController {
         </div>
 
         <div class="board-wrap" style="align-items: center; justify-content: center; position: relative; flex: 1;">
-          <canvas id="meow-canvas" width="340" height="340" style="touch-action: none; border-radius: 12px; max-width: 94vw; max-height: 54vh;"></canvas>
+          <canvas id="meow-canvas" width="340" height="340" style="touch-action: none; border-radius: 12px;"></canvas>
           
           <!-- Win Overlay -->
           <div id="meow-win-modal" class="overlay" style="display: none;">
@@ -165,11 +167,21 @@ export class MeowdokuController {
   private resizeCanvas(): void {
     if (!this.canvas || !this.ctx) return;
     const dpr = window.devicePixelRatio || 1;
-    const size = Math.min(350, Math.floor(window.innerWidth * 0.92), Math.floor(window.innerHeight * 0.52));
-    this.canvas.width = size * dpr;
-    this.canvas.height = size * dpr;
-    this.canvas.style.width = `${size}px`;
-    this.canvas.style.height = `${size}px`;
+
+    // Fit the board to the measured board area: on short/landscape screens the
+    // flex container is smaller than `window`, and a larger fixed buffer would
+    // spill past the container instead of shrinking with it.
+    const host = this.canvas.parentElement?.getBoundingClientRect();
+    const availW = host && host.width > 0 ? host.width : window.innerWidth * 0.92;
+    const availH = host && host.height > 0 ? host.height : window.innerHeight * 0.52;
+    const { w, h } = fitBox(availW, availH, 1, 350);
+
+    const bufferW = Math.round(w * dpr);
+    const bufferH = Math.round(h * dpr);
+    if (this.canvas.width !== bufferW) this.canvas.width = bufferW;
+    if (this.canvas.height !== bufferH) this.canvas.height = bufferH;
+    this.canvas.style.width = `${w}px`;
+    this.canvas.style.height = `${h}px`;
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(dpr, dpr);
   }
@@ -224,6 +236,12 @@ export class MeowdokuController {
       },
       { signal },
     );
+
+    if (this.canvas.parentElement && typeof ResizeObserver !== "undefined") {
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = new ResizeObserver(() => this.resizeCanvas());
+      this.resizeObserver.observe(this.canvas.parentElement);
+    }
 
     // Canvas click / touch
     this.canvas.addEventListener(
@@ -591,6 +609,8 @@ export class MeowdokuController {
     }
     this.abortController?.abort();
     this.abortController = null;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     if (this.container) {
       this.container.innerHTML = "";
     }

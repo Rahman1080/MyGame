@@ -2,6 +2,7 @@ import { synth } from "../../audio/synth";
 import { hapticTap } from "../../audio/haptics";
 import { recordHighScore } from "../../save/storage";
 import type { BasicScoreSave, SaveData } from "../../save/schema";
+import { fitBox } from "../canvasFit";
 import {
   commitSelection,
   createWordSearchGame,
@@ -33,6 +34,7 @@ export class WordSearchController {
   private onArcadeSave: ((s: BasicScoreSave) => void) | null = null;
   private onArcadeReport: ((s: BasicScoreSave) => void) | null = null;
   private abortController: AbortController | null = null;
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor() {
     this.state = createWordSearchGame(1, 0, "hard");
@@ -117,7 +119,7 @@ export class WordSearchController {
         </div>
 
         <div class="board-wrap" style="align-items: center; justify-content: center; position: relative;">
-          <canvas id="ws-canvas" width="350" height="350" style="touch-action: none; border-radius: 14px; max-width: 92vw; max-height: 52vh; cursor: crosshair;"></canvas>
+          <canvas id="ws-canvas" width="350" height="350" style="touch-action: none; border-radius: 14px; cursor: crosshair;"></canvas>
           
           <div id="ws-winmodal" class="overlay" style="display: none;">
             <div class="win-card">
@@ -148,11 +150,20 @@ export class WordSearchController {
   private resizeCanvas(): void {
     if (!this.canvas || !this.ctx) return;
     const dpr = window.devicePixelRatio || 1;
-    const size = Math.min(350, Math.floor(window.innerWidth * 0.92), Math.floor(window.innerHeight * 0.46));
-    this.canvas.width = size * dpr;
-    this.canvas.height = size * dpr;
-    this.canvas.style.width = `${size}px`;
-    this.canvas.style.height = `${size}px`;
+
+    // Match the buffer to the measured board area so the grid stays square on
+    // short/landscape screens instead of being clamped on a single axis.
+    const host = this.canvas.parentElement?.getBoundingClientRect();
+    const availW = host && host.width > 0 ? host.width : window.innerWidth * 0.92;
+    const availH = host && host.height > 0 ? host.height : window.innerHeight * 0.46;
+    const { w, h } = fitBox(availW, availH, 1, 350);
+
+    const bufferW = Math.round(w * dpr);
+    const bufferH = Math.round(h * dpr);
+    if (this.canvas.width !== bufferW) this.canvas.width = bufferW;
+    if (this.canvas.height !== bufferH) this.canvas.height = bufferH;
+    this.canvas.style.width = `${w}px`;
+    this.canvas.style.height = `${h}px`;
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(dpr, dpr);
   }
@@ -340,6 +351,12 @@ export class WordSearchController {
     }
 
     window.addEventListener("resize", () => this.resizeCanvas(), { signal });
+
+    if (this.canvas?.parentElement && typeof ResizeObserver !== "undefined") {
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = new ResizeObserver(() => this.resizeCanvas());
+      this.resizeObserver.observe(this.canvas.parentElement);
+    }
   }
 
   private advanceNextLevel(): void {
@@ -394,6 +411,8 @@ export class WordSearchController {
     }
     this.abortController?.abort();
     this.abortController = null;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     if (this.container) {
       this.container.innerHTML = "";
     }
