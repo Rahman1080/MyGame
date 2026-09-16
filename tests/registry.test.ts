@@ -14,6 +14,7 @@ describe("game registry", () => {
       "breaker",
       "matrix",
       "wordsearch",
+      "wordconnect",
     ]);
   });
 

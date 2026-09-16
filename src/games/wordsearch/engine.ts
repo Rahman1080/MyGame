@@ -20,6 +20,17 @@ export interface WordSelection {
   currentWord: string;
 }
 
+export type WordSearchDifficulty = "easy" | "hard" | "master";
+
+export const DIFFICULTY_CONFIG: Record<
+  WordSearchDifficulty,
+  { size: number; wordCount: number; minWordLen: number }
+> = {
+  easy: { size: 8, wordCount: 5, minWordLen: 4 },
+  hard: { size: 10, wordCount: 7, minWordLen: 5 },
+  master: { size: 12, wordCount: 9, minWordLen: 6 },
+};
+
 export interface WordSearchState {
   size: number;
   grid: string[][];
@@ -32,6 +43,7 @@ export interface WordSearchState {
   isCompleted: boolean;
   hintCell: GridPos | null;
   hintTimerMs: number;
+  difficulty: WordSearchDifficulty;
 }
 
 export const HIGHLIGHT_PALETTE = [
@@ -59,13 +71,30 @@ const DIRECTIONS = [
 export function createWordSearchGame(
   level = 1,
   highScore = 0,
-  size = 8,
+  difficultyOrSize: WordSearchDifficulty | number = "hard",
   rng = Math.random,
 ): WordSearchState {
+  const difficulty: WordSearchDifficulty =
+    typeof difficultyOrSize === "number"
+      ? difficultyOrSize <= 8
+        ? "easy"
+        : difficultyOrSize <= 10
+        ? "hard"
+        : "master"
+      : difficultyOrSize;
+
+  const config = DIFFICULTY_CONFIG[difficulty];
+  const size = config.size;
   const categoryIndex = (level - 1) % WORD_CATEGORIES.length;
   const category = WORD_CATEGORIES[categoryIndex]!;
 
-  const { grid, placedWords } = generateWordGrid(size, category.words, rng);
+  const { grid, placedWords } = generateWordGrid(
+    size,
+    category.words,
+    rng,
+    config.wordCount,
+    config.minWordLen,
+  );
 
   return {
     size,
@@ -79,22 +108,54 @@ export function createWordSearchGame(
     isCompleted: false,
     hintCell: null,
     hintTimerMs: 0,
+    difficulty,
   };
+}
+
+export function setWordSearchDifficulty(
+  state: WordSearchState,
+  difficulty: WordSearchDifficulty,
+  rng = Math.random,
+): void {
+  state.difficulty = difficulty;
+  const config = DIFFICULTY_CONFIG[difficulty];
+  state.size = config.size;
+  const { grid, placedWords } = generateWordGrid(
+    config.size,
+    state.category.words,
+    rng,
+    config.wordCount,
+    config.minWordLen,
+  );
+  state.grid = grid;
+  state.placedWords = placedWords;
+  state.activeSelection = null;
+  state.hintCell = null;
+  state.hintTimerMs = 0;
+  state.isCompleted = false;
 }
 
 export function generateWordGrid(
   size: number,
   wordPool: string[],
   rng = Math.random,
+  maxWords = 6,
+  minWordLen = 4,
 ): { grid: string[][]; placedWords: PlacedWord[] } {
   const grid: string[][] = Array.from({ length: size }, () =>
     Array.from({ length: size }, () => ""),
   );
   const placedWords: PlacedWord[] = [];
 
-  // Shuffle candidate words and pick 5 to 6 words that fit the grid
-  const shuffled = [...wordPool].sort(() => rng() - 0.5);
-  const wordsToPlace = shuffled.filter((w) => w.length <= size).slice(0, 6);
+  // Filter words that fit within grid size and meet minimum length
+  const eligible = wordPool.filter(
+    (w) => w.length >= minWordLen && w.length <= size,
+  );
+  // Sort longer words first for harder grids to ensure they get placed
+  const sorted = [...eligible].sort((a, b) => b.length - a.length);
+  // Take a randomized slice of candidate words
+  const pool = [...sorted].sort(() => rng() - 0.5);
+  const wordsToPlace = pool.slice(0, maxWords);
 
   let colorIdx = 0;
   for (const word of wordsToPlace) {

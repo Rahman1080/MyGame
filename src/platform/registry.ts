@@ -126,6 +126,18 @@ export const GAMES: GameDescriptor[] = [
     },
     load: () => import("../games/wordsearch"),
   },
+  {
+    meta: {
+      id: "wordconnect",
+      name: "NEON WORD CONNECT",
+      tagline: "Swipe & connect anagrams",
+      icon: "wordconnect",
+      accent: "#FF9900",
+      status: "ready",
+      hasGauntlet: false,
+    },
+    load: () => import("../games/wordconnect"),
+  },
 ];
 
 export function findGame(id: string): GameDescriptor | undefined {

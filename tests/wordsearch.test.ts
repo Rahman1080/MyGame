@@ -113,4 +113,20 @@ describe("Neon Word Search Engine", () => {
 
     expect(game.isCompleted).toBe(true);
   });
+
+  it("scales grids and word lengths for easy, hard, and master difficulties", () => {
+    const easy = createWordSearchGame(1, 0, "easy");
+    expect(easy.size).toBe(8);
+    expect(easy.grid.length).toBe(8);
+
+    const hard = createWordSearchGame(1, 0, "hard");
+    expect(hard.size).toBe(10);
+    expect(hard.grid.length).toBe(10);
+
+    const master = createWordSearchGame(1, 0, "master");
+    expect(master.size).toBe(12);
+    expect(master.grid.length).toBe(12);
+    // Master grid supports long tricky words (e.g. >= 8 characters)
+    expect(master.placedWords.some((w) => w.word.length >= 8)).toBe(true);
+  });
 });

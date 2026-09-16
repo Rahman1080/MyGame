@@ -6,9 +6,11 @@ import {
   commitSelection,
   createWordSearchGame,
   requestHint,
+  setWordSearchDifficulty,
   tickWordSearch,
   updateSelection,
   type GridPos,
+  type WordSearchDifficulty,
   type WordSearchState,
 } from "./engine";
 import { WordSearchRenderer } from "./render";
@@ -28,7 +30,7 @@ export class WordSearchController {
   private saveData: SaveData | null = null;
 
   constructor() {
-    this.state = createWordSearchGame(1, 0, 8);
+    this.state = createWordSearchGame(1, 0, "hard");
     this.renderer = new WordSearchRenderer();
   }
 
@@ -40,7 +42,7 @@ export class WordSearchController {
   ): void {
     this.container = container;
     this.onBack = onBack;
-    this.state = createWordSearchGame(1, save.best ?? 0, 8);
+    this.state = createWordSearchGame(1, save.best ?? 0, "hard");
     this.renderDom();
     this.setupListeners();
     this.onSave = () => {
@@ -64,7 +66,7 @@ export class WordSearchController {
     this.onSave = onSave;
 
     const currentHigh = saveData.arcadeHighScores?.["wordsearch"] ?? 0;
-    this.state = createWordSearchGame(1, currentHigh, 8);
+    this.state = createWordSearchGame(1, currentHigh, "hard");
 
     this.renderDom();
     this.setupListeners();
@@ -92,8 +94,14 @@ export class WordSearchController {
           </button>
         </div>
 
+        <div style="display: flex; justify-content: center; margin: 2px 0 6px;">
+          <button class="ghost-btn" data-act="diff" id="ws-diff-btn" style="padding: 4px 14px; font-size: 11px; font-weight: 700; border: 1px solid rgba(0,255,163,0.35); border-radius: 14px; background: rgba(11,15,25,0.7); color: #00ffa3; cursor: pointer; letter-spacing: 0.05em;">
+            GRID: ${this.state.difficulty.toUpperCase()} (${this.state.size}x${this.state.size})
+          </button>
+        </div>
+
         <div class="board-wrap" style="align-items: center; justify-content: center; position: relative;">
-          <canvas id="ws-canvas" width="340" height="340" style="touch-action: none; border-radius: 14px; max-width: 92vw; max-height: 52vh; cursor: crosshair;"></canvas>
+          <canvas id="ws-canvas" width="350" height="350" style="touch-action: none; border-radius: 14px; max-width: 92vw; max-height: 52vh; cursor: crosshair;"></canvas>
           
           <div id="ws-winmodal" class="overlay" style="display: none;">
             <div class="win-card">
@@ -108,7 +116,7 @@ export class WordSearchController {
         </div>
 
         <!-- Target Words Checklist -->
-        <div id="ws-word-list" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 12px 8px 0; max-width: 360px;">
+        <div id="ws-word-list" style="display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 10px 6px 0; max-width: 380px;">
           ${this.renderWordPills()}
         </div>
       </div>
@@ -118,7 +126,7 @@ export class WordSearchController {
     if (this.canvas) {
       this.ctx = this.canvas.getContext("2d");
       const dpr = window.devicePixelRatio || 1;
-      const size = Math.min(340, Math.floor(window.innerWidth * 0.9));
+      const size = Math.min(350, Math.floor(window.innerWidth * 0.92));
       this.canvas.width = size * dpr;
       this.canvas.height = size * dpr;
       this.canvas.style.width = `${size}px`;
@@ -133,9 +141,9 @@ export class WordSearchController {
     return this.state.placedWords
       .map((pw) => {
         if (pw.found) {
-          return `<span style="padding: 4px 10px; font-size: 11px; font-weight: 700; border-radius: 12px; background: rgba(0,0,0,0.5); border: 1.5px solid ${pw.color}; color: ${pw.color}; text-decoration: line-through; text-shadow: 0 0 8px ${pw.color};">✓ ${pw.word}</span>`;
+          return `<span style="padding: 3px 9px; font-size: 11px; font-weight: 700; border-radius: 12px; background: rgba(0,0,0,0.5); border: 1.5px solid ${pw.color}; color: ${pw.color}; text-decoration: line-through; text-shadow: 0 0 8px ${pw.color};">✓ ${pw.word}</span>`;
         }
-        return `<span style="padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: #B0C4DE;">${pw.word}</span>`;
+        return `<span style="padding: 3px 9px; font-size: 11px; font-weight: 600; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.15); color: #B0C4DE;">${pw.word}</span>`;
       })
       .join("");
   }
@@ -162,6 +170,17 @@ export class WordSearchController {
         synth.tap();
         this.destroy();
         this.onBack?.();
+        return;
+      }
+
+      if (target.dataset.act === "diff") {
+        synth.tap();
+        const diffs: WordSearchDifficulty[] = ["easy", "hard", "master"];
+        const curIdx = diffs.indexOf(this.state.difficulty);
+        const next = diffs[(curIdx + 1) % diffs.length]!;
+        setWordSearchDifficulty(this.state, next);
+        this.renderDom();
+        this.setupListeners();
         return;
       }
 
@@ -253,7 +272,8 @@ export class WordSearchController {
     const nextLvl = this.state.level + 1;
     const currentHigh = this.saveData?.arcadeHighScores?.["wordsearch"] ?? this.state.highScore;
     const carriedScore = this.state.score;
-    this.state = createWordSearchGame(nextLvl, currentHigh, 8);
+    const diff = this.state.difficulty;
+    this.state = createWordSearchGame(nextLvl, currentHigh, diff);
     this.state.score = carriedScore;
     this.renderDom();
     this.setupListeners();

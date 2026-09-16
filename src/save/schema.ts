@@ -248,6 +248,7 @@ export interface SaveV2 {
     breaker: BasicScoreSave;
     matrix: BasicScoreSave;
     wordsearch: BasicScoreSave;
+    wordconnect: BasicScoreSave;
   };
 }
 
@@ -312,6 +313,7 @@ export function defaultSaveV2(): SaveV2 {
       breaker: { best: 0 },
       matrix: { best: 0 },
       wordsearch: { best: 0 },
+      wordconnect: { best: 0 },
     },
   };
 }
@@ -505,6 +507,10 @@ export function sanitizeV2(raw: unknown): SaveV2 {
   if (g.wordsearch && typeof g.wordsearch === "object") {
     const ws = g.wordsearch as Record<string, unknown>;
     d.games.wordsearch.best = asCount(ws.best);
+  }
+  if (g.wordconnect && typeof g.wordconnect === "object") {
+    const wc = g.wordconnect as Record<string, unknown>;
+    d.games.wordconnect.best = asCount(wc.best);
   }
   d.version = 2;
   return d;
