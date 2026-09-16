@@ -34,10 +34,18 @@ export function renderHome(root: HTMLElement, deps: HomeDeps, navigate: Navigate
   const cards = GAMES.map(({ meta }) => {
     const ready = meta.status === "ready";
     const label = `${escapeHtml(meta.name)} — ${escapeHtml(meta.tagline)}`;
-    return `<button class="arcade-card${ready ? "" : " soon"}" style="--accent:${meta.accent}" data-game="${meta.id}" ${
+    const hasThumb = Boolean(meta.thumbnail);
+    return `<button class="arcade-card${ready ? "" : " soon"}${hasThumb ? " has-thumb" : ""}" style="--accent:${meta.accent}" data-game="${meta.id}" ${
       ready ? "" : "disabled"
     } aria-label="${label}">
-      <div class="arcade-card-icon" aria-hidden="true">${getGameIcon(meta.id)}</div>
+      ${
+        hasThumb
+          ? `<div class="arcade-card-thumb" aria-hidden="true">
+               <img src="${meta.thumbnail}" alt="" class="arcade-thumb-img" />
+               <div class="arcade-thumb-scrim"></div>
+             </div>`
+          : `<div class="arcade-card-icon" aria-hidden="true">${getGameIcon(meta.id)}</div>`
+      }
       <span class="arcade-name">${escapeHtml(meta.name)}</span>
       <span class="arcade-tag">${escapeHtml(meta.tagline)}</span>
       <span class="arcade-state">${ready ? "PLAY" : "SOON"}</span>
@@ -59,7 +67,11 @@ export function renderHome(root: HTMLElement, deps: HomeDeps, navigate: Navigate
     </header>
 
     <button class="continue-card arcade-continue" data-act="continue">
-      <div class="continue-icon" style="color:${last.meta.accent}" aria-hidden="true">${getGameIcon(last.meta.id)}</div>
+      <div class="continue-icon" style="color:${last.meta.accent}" aria-hidden="true">${
+        last.meta.thumbnail
+          ? `<img src="${last.meta.thumbnail}" alt="" class="continue-thumb-img" />`
+          : getGameIcon(last.meta.id)
+      }</div>
       <span class="continue-text">
         <span class="k">CONTINUE PLAYING</span>
         <span class="lvl-big">${escapeHtml(last.meta.name)}</span>

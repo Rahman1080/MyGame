@@ -11,6 +11,7 @@ export interface GameMeta {
   name: string;
   tagline: string;
   icon: string;
+  thumbnail?: string;
   accent: string;
   status: "ready" | "soon";
   hasGauntlet: boolean;

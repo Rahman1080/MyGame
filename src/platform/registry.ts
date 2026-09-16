@@ -12,6 +12,7 @@ export const GAMES: GameDescriptor[] = [
       name: "GLOWTRAIL",
       tagline: "Rotate, launch, escape",
       icon: "trail",
+      thumbnail: "/glowtrail-thumb.jpg",
       accent: "#29DDF4",
       status: "ready",
       hasGauntlet: true,
