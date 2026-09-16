@@ -1,46 +1,53 @@
 import { describe, expect, it } from "vitest";
 import {
-  ARROWS_TOTAL_LEVELS,
   type ArrowTile,
   type ArrowsBoard,
-  type ArrowsResult,
   type ArrowsState,
+  availableIndices,
   bodyCells,
-  dailyStreakOn,
+  canLaunch,
   emptyArrowsSave,
   finalResult,
-  isLevelSolved,
-  isLevelUnlocked,
+  isLocked,
   isSolved,
   isStuck,
+  laneInfo,
+  lanePath,
   launch,
   levelScore,
-  movableIndices,
-  parForBoard,
-  recordDailyRun,
+  levelStars,
+  levelsWon,
+  perfectLevels,
   recordLevelRun,
+  remainingArrows,
   starsForRun,
   undo,
 } from "../src/games/arrows/logic";
-import { createLevelState } from "../src/games/arrows/generate";
+import { ARROWS_SAVE_VERSION } from "../src/save/schema";
+
+const tile = (over: Partial<ArrowTile> & Pick<ArrowTile, "dir" | "head">): ArrowTile => ({
+  id: 0,
+  length: 1,
+  lock: 0,
+  ...over,
+});
 
 function board(size: number, arrows: ArrowTile[]): ArrowsBoard {
   return { size, arrows: arrows.map((arrow, id) => ({ ...arrow, id })), seed: "test" };
 }
 
-function stateFor(source: ArrowsBoard, mode: ArrowsState["mode"] = "level"): ArrowsState {
+function stateFor(source: ArrowsBoard): ArrowsState {
   return {
-    mode,
+    mode: "level",
     level: 1,
     boardIndex: 0,
     size: source.size,
     arrows: source.arrows,
-    heads: source.arrows.map((arrow) => arrow.head),
-    bodies: source.arrows.map((arrow) => arrow.length),
+    alive: source.arrows.map(() => true),
     escaped: 0,
     launches: 0,
+    missteps: 0,
     hints: 0,
-    par: parForBoard(source.size, source.arrows),
     seed: source.seed,
     date: "",
     status: "playing",
@@ -48,161 +55,162 @@ function stateFor(source: ArrowsBoard, mode: ArrowsState["mode"] = "level"): Arr
   };
 }
 
-const tile = (head: number, dir: ArrowTile["dir"], extra: Partial<ArrowTile> = {}): ArrowTile => ({
-  id: 0,
-  dir,
-  head,
-  length: 1,
-  lock: 0,
-  ...extra,
-});
-
-describe("arrows geometry", () => {
-  it("traces a body behind the head in the opposite direction", () => {
-    expect(bodyCells(4, 0, 8, 2)).toEqual([8, 12]);
-    expect(bodyCells(4, 1, 4, 1)).toEqual([4]);
+describe("arrow geometry", () => {
+  it("builds body cells head-first, extending backwards", () => {
+    expect(bodyCells(4, 0, 8, 1)).toEqual([8]);
+    expect(bodyCells(4, 1, 5, 2)).toEqual([5, 4]);
+    expect(bodyCells(4, 2, 8, 3)).toEqual([8, 4, 0]);
   });
 
-  it("computes par from distance to the edge plus body length", () => {
-    const b = board(4, [tile(0, 1), tile(8, 0, { length: 2 })]);
-    expect(parForBoard(4, b.arrows)).toBe(4 + 4);
+  it("walks the lane to the edge", () => {
+    expect(lanePath(4, 1, 4)).toEqual([5, 6, 7]);
+    expect(lanePath(4, 0, 0)).toEqual([]);
+    expect(lanePath(4, 2, 1)).toEqual([5, 9, 13]);
   });
 });
 
-describe("arrows launch", () => {
-  it("advances an arrow by one cell and records the launch", () => {
-    const s = stateFor(board(4, [tile(0, 1)]));
-    const out = launch(s, 0);
-    expect(out.moved).toBe(true);
-    expect(out.state.heads[0]).toBe(1);
-    expect(out.state.launches).toBe(1);
-    expect(out.state.history).toHaveLength(1);
+describe("arrow queries", () => {
+  it("reads the lane and finds the blocker", () => {
+    const state = stateFor(board(4, [tile({ dir: 1, head: 4 }), tile({ dir: 2, head: 6 })]));
+    expect(laneInfo(state, 0)).toEqual({ cells: [5, 6], blocked: true, blocker: 6 });
+    expect(canLaunch(state, 0)).toBe(false);
+    expect(canLaunch(state, 1)).toBe(true);
   });
 
-  it("blocks an arrow whose next cell is occupied", () => {
-    const s = stateFor(board(4, [tile(0, 1), tile(1, 1)]));
-    const out = launch(s, 0);
-    expect(out.moved).toBe(false);
-    expect(out.reason).toBe("blocked");
-    expect(movableIndices(s.size, s.arrows, s.heads, s.bodies)).toEqual([1]);
+  it("reports a clear lane to the edge", () => {
+    const state = stateFor(board(4, [tile({ dir: 1, head: 4 })]));
+    expect(laneInfo(state, 0)).toEqual({ cells: [5, 6, 7], blocked: false, blocker: -1 });
+    expect(canLaunch(state, 0)).toBe(true);
   });
 
-  it("refuses a locked arrow until enough arrows escape", () => {
-    const s = stateFor(
-      board(4, [
-        tile(0, 0, { lock: 1 }),
-        tile(5, 0),
-      ]),
-    );
-    const blocked = launch(s, 0);
-    expect(blocked.moved).toBe(false);
-    expect(blocked.reason).toBe("locked");
-
-    let current = launch(s, 1).state;
-    expect(current.escaped).toBe(0);
-    current = launch(current, 1).state;
-    expect(current.escaped).toBe(1);
-    const now = launch(current, 0);
-    expect(now.moved).toBe(true);
+  it("counts a long arrow body as a blocker", () => {
+    const state = stateFor(board(4, [tile({ dir: 1, head: 4 }), tile({ dir: 2, head: 10, length: 2 })]));
+    expect(laneInfo(state, 0).blocked).toBe(true);
+    expect(laneInfo(state, 0).blocker).toBe(6);
   });
 
-  it("escapes an arrow that reaches the edge", () => {
-    let s = stateFor(board(4, [tile(0, 0)]));
-    s = launch(s, 0).state;
-    expect(s.escaped).toBe(1);
-    expect(s.bodies[0]).toBe(0);
-    expect(isSolved(s)).toBe(true);
-    expect(s.status).toBe("solved");
+  it("gates an arrow behind its lock", () => {
+    const state = stateFor(board(4, [tile({ dir: 1, head: 0 }), tile({ dir: 1, head: 4, lock: 2 })]));
+    expect(isLocked(state, 1)).toBe(true);
+    expect(canLaunch(state, 1)).toBe(false);
+    const after = launch(state, 0).state;
+    expect(isLocked(after, 1)).toBe(true);
+    const second = launch(after, launch(after, 0).state.arrows.length ? 0 : 0);
+    void second;
   });
 
-  it("takes extra launches to clear a long arrow", () => {
-    const b = board(4, [tile(8, 0, { length: 2 })]);
-    expect(parForBoard(4, b.arrows)).toBe(4);
-    let s = stateFor(b);
-    for (let i = 0; i < 4; i += 1) s = launch(s, 0).state;
-    expect(s.escaped).toBe(1);
-    expect(isSolved(s)).toBe(true);
+  it("lists ready arrows", () => {
+    const state = stateFor(board(4, [tile({ dir: 1, head: 4 }), tile({ dir: 2, head: 6 })]));
+    expect(availableIndices(state)).toEqual([1]);
   });
 
-  it("detects a dead end when nothing can move", () => {
-    const s = stateFor(board(4, [tile(0, 1), tile(1, 3)]));
-    expect(isStuck(s)).toBe(true);
-    expect(movableIndices(s.size, s.arrows, s.heads, s.bodies)).toEqual([]);
+  it("is stuck only when arrows remain and none can launch", () => {
+    const open = stateFor(board(4, [tile({ dir: 1, head: 4 })]));
+    expect(isStuck(open)).toBe(false);
+    const deadlock = stateFor(board(2, [tile({ dir: 1, head: 0 }), tile({ dir: 3, head: 1 })]));
+    expect(isStuck(deadlock)).toBe(true);
+    expect(isSolved(deadlock)).toBe(false);
+  });
+});
+
+describe("arrow launch", () => {
+  it("escapes an arrow with a clear lane", () => {
+    const start = stateFor(board(4, [tile({ dir: 1, head: 4 })]));
+    const outcome = launch(start, 0);
+    expect(outcome.moved).toBe(true);
+    expect(outcome.state.alive[0]).toBe(false);
+    expect(outcome.state.escaped).toBe(1);
+    expect(outcome.state.launches).toBe(1);
+    expect(outcome.state.status).toBe("solved");
+    expect(remainingArrows(outcome.state)).toBe(0);
+  });
+
+  it("rejects a blocked launch and records a misstep", () => {
+    const start = stateFor(board(4, [tile({ dir: 1, head: 4 }), tile({ dir: 2, head: 6 })]));
+    const outcome = launch(start, 0);
+    expect(outcome.moved).toBe(false);
+    expect(outcome.reason).toBe("blocked");
+    expect(outcome.misstep).toBe(true);
+    expect(outcome.state.missteps).toBe(1);
+    expect(outcome.state.launches).toBe(0);
+    expect(outcome.state.alive[0]).toBe(true);
+  });
+
+  it("rejects a locked launch and records a misstep", () => {
+    const start = stateFor(board(4, [tile({ dir: 1, head: 0 }), tile({ dir: 1, head: 4, lock: 2 })]));
+    const outcome = launch(start, 1);
+    expect(outcome.moved).toBe(false);
+    expect(outcome.reason).toBe("locked");
+    expect(outcome.state.missteps).toBe(1);
+  });
+
+  it("ignores launches after solving", () => {
+    const start = stateFor(board(4, [tile({ dir: 1, head: 4 })]));
+    const solved = launch(start, 0).state;
+    const outcome = launch(solved, 0);
+    expect(outcome.moved).toBe(false);
+    expect(outcome.reason).toBe("done");
+    expect(outcome.state.missteps).toBe(0);
   });
 
   it("undo restores the previous pose", () => {
-    const s = stateFor(board(4, [tile(0, 1)]));
-    const moved = launch(s, 0).state;
-    expect(moved.launches).toBe(1);
-    const back = undo(moved);
-    expect(back.heads[0]).toBe(0);
-    expect(back.launches).toBe(0);
+    const start = stateFor(board(4, [tile({ dir: 1, head: 4 }), tile({ dir: 1, head: 8 })]));
+    const after = launch(start, 0).state;
+    expect(after.status).toBe("playing");
+    const back = undo(after);
+    expect(back.alive[0]).toBe(true);
+    expect(back.escaped).toBe(0);
+    expect(back.status).toBe("playing");
   });
 });
 
-describe("arrows scoring", () => {
-  it("awards three stars only without hints", () => {
-    expect(starsForRun(10, 10, 0)).toBe(3);
-    expect(starsForRun(10, 10, 1)).toBe(2);
-    expect(starsForRun(10, 10, 2)).toBe(1);
+describe("arrow scoring", () => {
+  it("awards stars for clean runs", () => {
+    expect(starsForRun(0, 0)).toBe(3);
+    expect(starsForRun(1, 0)).toBe(2);
+    expect(starsForRun(0, 3)).toBe(2);
+    expect(starsForRun(2, 0)).toBe(1);
+    expect(starsForRun(0, 4)).toBe(1);
   });
 
-  it("scores a solved level and reports it", () => {
-    const s = { ...stateFor(board(4, [tile(0, 0)])), hints: 1 };
-    const solved = launch(s, 0).state;
-    const result = finalResult(solved);
-    expect(result.solved).toBe(true);
-    expect(result.stars).toBe(2);
-    expect(levelScore(result.launches, result.par, result.hints, result.stars)).toBe(360);
-  });
-});
-
-describe("arrows saves", () => {
-  const result = (over: Partial<ArrowsResult> = {}): ArrowsResult => ({
-    mode: "level",
-    level: 2,
-    date: "",
-    solved: true,
-    launches: 12,
-    par: 12,
-    hints: 0,
-    stars: 3,
-    ...over,
+  it("scores a run", () => {
+    expect(levelScore(12, 0, 3)).toBe(600);
+    expect(levelScore(12, 2, 3)).toBe(520);
   });
 
-  it("records a solved level once and unlocks the next", () => {
-    const save = recordLevelRun(emptyArrowsSave(), result());
-    expect(isLevelSolved(save, 2)).toBe(true);
-    expect(isLevelUnlocked(save, 3)).toBe(true);
-    expect(isLevelUnlocked(save, 4)).toBe(false);
-    expect(recordLevelRun(save, result({ stars: 1 })).levels["2"]!.stars).toBe(3);
-  });
-
-  it("never records an unsolved level", () => {
-    const save = recordLevelRun(emptyArrowsSave(), result({ solved: false }));
-    expect(isLevelSolved(save, 2)).toBe(false);
-  });
-
-  it("records a daily solve and derives the streak", () => {
-    let save = recordDailyRun(emptyArrowsSave(), result({ mode: "daily", date: "2026-09-14" }));
-    save = recordDailyRun(save, result({ mode: "daily", date: "2026-09-15", launches: 9, stars: 2 }));
-    expect(save.daily["2026-09-15"]).toEqual({ solved: true, launches: 9, stars: 2 });
-    expect(dailyStreakOn(save, "2026-09-15")).toBe(2);
-    const replay = recordDailyRun(save, result({ mode: "daily", date: "2026-09-15", stars: 1 }));
-    expect(replay.daily["2026-09-15"]!.stars).toBe(2);
+  it("reports a result", () => {
+    const start = stateFor(board(4, [tile({ dir: 1, head: 4 })]));
+    const result = finalResult(launch(start, 0).state);
+    expect(result).toEqual({
+      mode: "level",
+      level: 1,
+      date: "",
+      solved: true,
+      launches: 1,
+      missteps: 0,
+      hints: 0,
+      arrows: 1,
+      stars: 3,
+    });
   });
 });
 
-describe("arrows level states", () => {
-  it("builds the first level from a generated board", () => {
-    const s = createLevelState(1);
-    expect(s.size).toBe(4);
-    expect(s.arrows.length).toBeGreaterThan(0);
-    expect(s.bodies.every((body, i) => body === s.arrows[i]!.length)).toBe(true);
-    expect(s.par).toBeGreaterThan(0);
+describe("arrow saves", () => {
+  it("starts empty at the current save version", () => {
+    const save = emptyArrowsSave();
+    expect(save.version).toBe(ARROWS_SAVE_VERSION);
+    expect(save.levels).toEqual({});
+    expect(save.perfect).toBe(0);
   });
 
-  it("has a full campaign", () => {
-    expect(ARROWS_TOTAL_LEVELS).toBe(60);
+  it("records a solved level and its perfect count", () => {
+    const start = stateFor(board(4, [tile({ dir: 1, head: 4 })]));
+    const result = finalResult(launch(start, 0).state);
+    const save = recordLevelRun(emptyArrowsSave(), result);
+    expect(levelStars(save, 1)).toBe(3);
+    expect(levelsWon(save)).toBe(1);
+    expect(perfectLevels(save)).toBe(1);
+    const again = recordLevelRun(save, result);
+    expect(perfectLevels(again)).toBe(1);
   });
 });

@@ -1,9 +1,10 @@
 import { previousYmd } from "../../gen/daily";
-import type { ArrowsDailyRecord, ArrowsSave, LevelRecord } from "../../save/schema";
+import { ARROWS_SAVE_VERSION, type ArrowsDailyRecord, type ArrowsSave, type LevelRecord } from "../../save/schema";
 
-export const ARROWS_TOTAL_LEVELS = 60;
+export const ARROWS_TOTAL_LEVELS = 100;
 export const ARROWS_MIN_SIZE = 4;
-export const ARROWS_MAX_SIZE = 7;
+export const ARROWS_MAX_SIZE = 9;
+export const ARROWS_MAX_LENGTH = 3;
 export const ARROWS_SCORE_PER_STAR = 200;
 
 /** Arrow headings, clockwise starting at up. */
@@ -16,15 +17,16 @@ const DIR_DC = [0, 1, 0, -1] as const;
 
 export type ArrowsMode = "level" | "endless" | "daily";
 
-export type ArrowsStatus = "playing" | "solved" | "stuck";
+/** There is no fail state: a board is either in play or fully cleared. */
+export type ArrowsStatus = "playing" | "solved";
 
-/** A single movable arrow. Its body extends opposite `dir` for `length` cells. */
+/** A fixed arrow. Its body extends opposite `dir` for `length` cells. */
 export interface ArrowTile {
   id: number;
   dir: Dir;
-  /** Head cell at the start of play. */
+  /** Cell the arrow head starts on. */
   head: number;
-  /** Cells occupied by this arrow, head included. */
+  /** Cells the arrow occupies, head included (1-3). */
   length: number;
   /** Escapes required before this arrow may launch. 0 = free immediately. */
   lock: number;
@@ -37,11 +39,12 @@ export interface ArrowsBoard {
   seed: string;
 }
 
+/** Undo point. Arrows never move, so only the live set and counters change. */
 export interface ArrowsSnapshot {
-  heads: number[];
-  bodies: number[];
+  alive: boolean[];
   escaped: number;
   launches: number;
+  missteps: number;
 }
 
 export interface ArrowsState {
@@ -50,16 +53,14 @@ export interface ArrowsState {
   boardIndex: number;
   size: number;
   arrows: ArrowTile[];
-  /** Current head cell per arrow; -1 once fully escaped. */
-  heads: number[];
-  /** Remaining body cells per arrow; 0 once fully escaped. */
-  bodies: number[];
+  /** Which arrows are still on the board. */
+  alive: boolean[];
   escaped: number;
-  /** Successful launches: each advances one arrow by one cell or off the board. */
+  /** Successful launches (each clears exactly one arrow). */
   launches: number;
+  /** Taps the game rejected because the arrow was blocked or locked. */
+  missteps: number;
   hints: number;
-  /** Minimum number of successful launches needed to clear the board. */
-  par: number;
   seed: string;
   date: string;
   status: ArrowsStatus;
@@ -72,9 +73,18 @@ export interface ArrowsResult {
   date: string;
   solved: boolean;
   launches: number;
-  par: number;
+  missteps: number;
   hints: number;
+  arrows: number;
   stars: number;
+}
+
+export interface LaneInfo {
+  /** Cells between the head and the edge, head-first. Ends at the blocker when blocked. */
+  cells: number[];
+  blocked: boolean;
+  /** Cell index that blocks the launch, or -1 when the lane is clear. */
+  blocker: number;
 }
 
 export interface LaunchOutcome {
@@ -82,15 +92,13 @@ export interface LaunchOutcome {
   moved: boolean;
   reason: "" | "blocked" | "locked" | "escaped" | "done";
   arrow: number;
-  /** Cells the arrow occupied before the launch. */
-  from: number[];
-  /** Cells the arrow occupies after the launch (empty when it fully escaped). */
-  to: number[];
-  /** The head left the board during this launch. */
-  exited: boolean;
-  /** The whole arrow left the board during this launch. */
-  cleared: boolean;
+  /** True when this rejected tap counted as a misstep. */
+  misstep: boolean;
+  lane: number[];
+  blocker: number;
 }
+
+/* ------------------------------------------------------------------ geometry */
 
 export function oppositeDir(dir: Dir): Dir {
   return ((dir + 2) % 4) as Dir;
@@ -120,12 +128,12 @@ export function stepCell(size: number, cell: number, dir: Dir): number {
   return row * size + col;
 }
 
-/** The cells a body of `body` cells occupies, head first. */
-export function bodyCells(size: number, dir: Dir, head: number, body: number): number[] {
+/** The cells a body of `length` cells occupies, head first. */
+export function bodyCells(size: number, dir: Dir, head: number, length: number): number[] {
   const out: number[] = [];
   let cell = head;
   const back = oppositeDir(dir);
-  for (let i = 0; i < body; i += 1) {
+  for (let i = 0; i < length; i += 1) {
     if (cell < 0 || cell >= size * size) break;
     out.push(cell);
     cell = stepCell(size, cell, back);
@@ -133,26 +141,23 @@ export function bodyCells(size: number, dir: Dir, head: number, body: number): n
   return out;
 }
 
-/** Steps the head needs to leave the board from `head` in `dir` (always >= 1). */
-export function frontDistance(size: number, dir: Dir, head: number): number {
+/** Cells between the head and the board edge, head-first, excluding the head. */
+export function lanePath(size: number, dir: Dir, head: number): number[] {
+  const out: number[] = [];
   let cell = head;
-  for (let d = 1; ; d += 1) {
+  for (;;) {
     const next = stepCell(size, cell, dir);
-    if (next < 0) return d;
+    if (next < 0) return out;
+    out.push(next);
     cell = next;
   }
 }
 
-/** Total successful launches needed to clear one arrow from its start. */
-export function arrowSteps(size: number, arrow: ArrowTile): number {
-  return frontDistance(size, arrow.dir, arrow.head) + Math.max(0, arrow.length - 1);
-}
+/* ------------------------------------------------------------------- queries */
 
-export function parForBoard(size: number, arrows: readonly ArrowTile[]): number {
-  return arrows.reduce((sum, arrow) => sum + arrowSteps(size, arrow), 0);
+export function isEscaped(state: ArrowsState, index: number): boolean {
+  return state.alive[index] !== true;
 }
-
-/* ------------------------------------------------------------------ queries */
 
 export function isLocked(state: ArrowsState, index: number): boolean {
   const arrow = state.arrows[index];
@@ -160,158 +165,153 @@ export function isLocked(state: ArrowsState, index: number): boolean {
   return state.escaped < arrow.lock;
 }
 
-export function isEscaped(state: ArrowsState, index: number): boolean {
-  return (state.bodies[index] ?? 0) <= 0;
-}
-
-export function escapedCount(bodies: readonly number[]): number {
-  return bodies.reduce((count, body) => (body <= 0 ? count + 1 : count), 0);
-}
-
 /** Every cell occupied by a live arrow, optionally skipping one index. */
-export function occupiedAt(
+export function occupiedCells(
   size: number,
   arrows: readonly ArrowTile[],
-  heads: readonly number[],
-  bodies: readonly number[],
+  alive: readonly boolean[],
   skip = -1,
 ): Set<number> {
   const set = new Set<number>();
   for (let i = 0; i < arrows.length; i += 1) {
-    if (i === skip || (bodies[i] ?? 0) <= 0) continue;
-    for (const cell of bodyCells(size, arrows[i]!.dir, heads[i]!, bodies[i]!)) set.add(cell);
+    if (i === skip || alive[i] !== true) continue;
+    const arrow = arrows[i]!;
+    for (const cell of bodyCells(size, arrow.dir, arrow.head, arrow.length)) set.add(cell);
   }
   return set;
 }
 
-/** Every movable arrow: unlocked, still on the board, with a clear next cell. */
-export function movableIndices(
+/** True when any other live arrow's body sits in `index`'s lane. */
+export function laneBlocked(
   size: number,
   arrows: readonly ArrowTile[],
-  heads: readonly number[],
-  bodies: readonly number[],
+  alive: readonly boolean[],
+  index: number,
+): boolean {
+  const arrow = arrows[index];
+  if (!arrow) return true;
+  const occupied = occupiedCells(size, arrows, alive, index);
+  for (const cell of lanePath(size, arrow.dir, arrow.head)) {
+    if (occupied.has(cell)) return true;
+  }
+  return false;
+}
+
+export function laneInfo(state: ArrowsState, index: number): LaneInfo {
+  const arrow = state.arrows[index];
+  if (!arrow || state.alive[index] !== true) return { cells: [], blocked: false, blocker: -1 };
+  const occupied = occupiedCells(state.size, state.arrows, state.alive, index);
+  const cells: number[] = [];
+  let cell = arrow.head;
+  for (;;) {
+    const next = stepCell(state.size, cell, arrow.dir);
+    if (next < 0) return { cells, blocked: false, blocker: -1 };
+    cells.push(next);
+    if (occupied.has(next)) return { cells, blocked: true, blocker: next };
+    cell = next;
+  }
+}
+
+export function canLaunch(state: ArrowsState, index: number): boolean {
+  if (state.alive[index] !== true) return false;
+  if (isLocked(state, index)) return false;
+  return !laneBlocked(state.size, state.arrows, state.alive, index);
+}
+
+/** Ready arrows from raw arrays (used by the solver and generator). */
+export function readyIndices(
+  size: number,
+  arrows: readonly ArrowTile[],
+  alive: readonly boolean[],
+  escaped: number,
 ): number[] {
-  const occupied = occupiedAt(size, arrows, heads, bodies);
-  const escaped = escapedCount(bodies);
   const out: number[] = [];
   for (let i = 0; i < arrows.length; i += 1) {
     const arrow = arrows[i]!;
-    if ((bodies[i] ?? 0) <= 0 || escaped < arrow.lock) continue;
-    const next = stepCell(size, heads[i]!, arrow.dir);
-    if (next === -1 || !occupied.has(next)) out.push(i);
+    if (alive[i] !== true || escaped < arrow.lock) continue;
+    if (!laneBlocked(size, arrows, alive, i)) out.push(i);
   }
   return out;
 }
 
-export function movableArrows(state: ArrowsState): number[] {
+export function availableIndices(state: ArrowsState): number[] {
   if (state.status !== "playing") return [];
-  return movableIndices(state.size, state.arrows, state.heads, state.bodies);
+  return readyIndices(state.size, state.arrows, state.alive, state.escaped);
 }
 
-function occupiedByOthers(state: ArrowsState, index: number, cell: number): boolean {
-  return occupiedAt(state.size, state.arrows, state.heads, state.bodies, index).has(cell);
+export function availableCount(state: ArrowsState): number {
+  return availableIndices(state).length;
+}
+
+export function remainingArrows(state: ArrowsState): number {
+  return state.alive.reduce((count, live) => (live ? count + 1 : count), 0);
 }
 
 export function isSolved(state: ArrowsState): boolean {
-  return state.bodies.every((body) => body <= 0);
+  return state.escaped >= state.arrows.length;
 }
 
 export function isStuck(state: ArrowsState): boolean {
   if (isSolved(state)) return false;
-  return movableArrows(state).length === 0;
+  return availableIndices(state).length === 0;
 }
 
 /* ------------------------------------------------------------------- actions */
 
 export function snapshot(state: ArrowsState): ArrowsSnapshot {
   return {
-    heads: state.heads.slice(),
-    bodies: state.bodies.slice(),
+    alive: state.alive.slice(),
     escaped: state.escaped,
     launches: state.launches,
+    missteps: state.missteps,
   };
 }
 
 function settle(state: ArrowsState): ArrowsState {
-  if (isSolved(state)) return { ...state, status: "solved" };
-  if (isStuck(state)) return { ...state, status: "stuck" };
-  return state;
+  return isSolved(state) ? { ...state, status: "solved" } : state;
 }
 
-/** Poses after advancing arrow `index` one step (or off the board). Pure. */
-export function applyStep(
-  size: number,
-  arrows: readonly ArrowTile[],
-  heads: readonly number[],
-  bodies: readonly number[],
+function reject(
+  state: ArrowsState,
   index: number,
-): { heads: number[]; bodies: number[] } {
-  const arrow = arrows[index]!;
-  const nextHeads = heads.slice();
-  const nextBodies = bodies.slice();
-  const cells = bodyCells(size, arrow.dir, heads[index]!, bodies[index]!);
-  const next = stepCell(size, heads[index]!, arrow.dir);
-  if (next === -1) {
-    const remaining = cells
-      .slice(1)
-      .map((cell) => stepCell(size, cell, arrow.dir))
-      .filter((cell) => cell >= 0);
-    if (remaining.length === 0) {
-      nextHeads[index] = -1;
-      nextBodies[index] = 0;
-    } else {
-      nextHeads[index] = remaining[0]!;
-      nextBodies[index] = remaining.length;
-    }
-  } else {
-    nextHeads[index] = next;
-  }
-  return { heads: nextHeads, bodies: nextBodies };
+  reason: LaunchOutcome["reason"],
+  lane: number[],
+  blocker: number,
+  misstep: boolean,
+): LaunchOutcome {
+  return {
+    state: misstep ? { ...state, missteps: state.missteps + 1 } : state,
+    moved: false,
+    reason,
+    arrow: index,
+    misstep,
+    lane,
+    blocker,
+  };
 }
 
-function blankOutcome(state: ArrowsState, index: number, reason: LaunchOutcome["reason"]): LaunchOutcome {
-  return { state, moved: false, reason, arrow: index, from: [], to: [], exited: false, cleared: false };
-}
-
+/**
+ * Launch an arrow. It escapes (and is removed) only when its whole lane to the
+ * edge is free of every other live arrow's body and its lock is satisfied.
+ */
 export function launch(state: ArrowsState, index: number): LaunchOutcome {
-  if (state.status !== "playing") return blankOutcome(state, index, "done");
   const arrow = state.arrows[index];
-  if (!arrow) return blankOutcome(state, index, "done");
-  if (isEscaped(state, index)) return blankOutcome(state, index, "escaped");
-  if (isLocked(state, index)) return blankOutcome(state, index, "locked");
+  if (state.status !== "playing") return reject(state, index, "done", [], -1, false);
+  if (!arrow || state.alive[index] !== true) return reject(state, index, "escaped", [], -1, false);
+  const info = laneInfo(state, index);
+  if (isLocked(state, index)) return reject(state, index, "locked", info.cells, info.blocker, true);
+  if (info.blocked) return reject(state, index, "blocked", info.cells, info.blocker, true);
 
-  const from = bodyCells(state.size, arrow.dir, state.heads[index]!, state.bodies[index]!);
-  const next = stepCell(state.size, state.heads[index]!, arrow.dir);
-  if (next !== -1 && occupiedByOthers(state, index, next)) {
-    return { ...blankOutcome(state, index, "blocked"), from };
-  }
-
-  const stepped = applyStep(state.size, state.arrows, state.heads, state.bodies, index);
-  const cleared = (stepped.bodies[index] ?? 0) <= 0;
-  const to =
-    (stepped.bodies[index] ?? 0) > 0
-      ? bodyCells(state.size, arrow.dir, stepped.heads[index]!, stepped.bodies[index]!)
-      : [];
-
-  const nextState = settle({
+  const alive = state.alive.slice();
+  alive[index] = false;
+  const next = settle({
     ...state,
-    heads: stepped.heads,
-    bodies: stepped.bodies,
-    escaped: escapedCount(stepped.bodies),
+    alive,
+    escaped: state.escaped + 1,
     launches: state.launches + 1,
     history: [...state.history, snapshot(state)],
   });
-
-  return {
-    state: nextState,
-    moved: true,
-    reason: "",
-    arrow: index,
-    from,
-    to,
-    exited: next === -1,
-    cleared,
-  };
+  return { state: next, moved: true, reason: "", arrow: index, misstep: false, lane: info.cells, blocker: -1 };
 }
 
 export function canUndo(state: ArrowsState): boolean {
@@ -328,19 +328,19 @@ export function undo(state: ArrowsState): ArrowsState {
 
 /* ------------------------------------------------------------------ scoring */
 
-/** Stars come from staying unaided: each hint costs a star. */
-export function starsForRun(_launches: number, _par: number, hints: number): number {
-  if (hints <= 0) return 3;
-  if (hints === 1) return 2;
+/** Stars reward a clean run: no hints and no wasted taps for three. */
+export function starsForRun(hints: number, missteps: number): number {
+  if (hints <= 0 && missteps <= 0) return 3;
+  if (hints <= 1 && missteps <= 3) return 2;
   return 1;
 }
 
-export function levelScore(_launches: number, _par: number, hints: number, stars: number): number {
+export function levelScore(_launches: number, hints: number, stars: number): number {
   return Math.max(0, stars * ARROWS_SCORE_PER_STAR - hints * 40);
 }
 
-export function boardValue(arrows: number, par: number): number {
-  return Math.max(0, arrows) * 25 + Math.max(0, par) * 4;
+export function boardValue(arrows: number, ready: number): number {
+  return Math.max(0, arrows) * 25 + Math.max(0, ready) * 8;
 }
 
 export function finalResult(state: ArrowsState): ArrowsResult {
@@ -351,9 +351,10 @@ export function finalResult(state: ArrowsState): ArrowsResult {
     date: state.date,
     solved,
     launches: state.launches,
-    par: state.par,
+    missteps: state.missteps,
     hints: state.hints,
-    stars: solved ? starsForRun(state.launches, state.par, state.hints) : 0,
+    arrows: state.arrows.length,
+    stars: solved ? starsForRun(state.hints, state.missteps) : 0,
   };
 }
 
@@ -361,11 +362,13 @@ export function finalResult(state: ArrowsState): ArrowsResult {
 
 export function emptyArrowsSave(): ArrowsSave {
   return {
+    version: ARROWS_SAVE_VERSION,
     levels: {},
     best: 0,
     runs: 0,
     boards: 0,
     bestRun: 0,
+    perfect: 0,
     dailyStreak: 0,
     bestDailyStreak: 0,
     daily: {},
@@ -395,6 +398,11 @@ export function isLevelUnlocked(save: ArrowsSave, level: number): boolean {
 
 export function levelsWon(save: ArrowsSave): number {
   return Object.values(save.levels).filter((record) => record.won).length;
+}
+
+/** A three-star level is by definition hint-free and misstep-free. */
+export function perfectLevels(save: ArrowsSave): number {
+  return Math.max(0, Math.floor(save.perfect));
 }
 
 export function isDailyDone(save: ArrowsSave, date: string): boolean {
@@ -430,18 +438,26 @@ export function recordLevelRun(save: ArrowsSave, result: ArrowsResult): ArrowsSa
   const key = levelKey(result.level);
   const prev = save.levels[key];
   const won = prev?.won === true;
+  const stars = Math.max(prev?.stars ?? 0, result.stars);
   const record: LevelRecord = {
     won: true,
-    stars: Math.max(prev?.stars ?? 0, result.stars),
+    stars,
     best: won && prev ? Math.min(prev.best, result.launches) : result.launches,
     bestTimeMs: null,
     hints: (prev?.hints ?? 0) + result.hints,
     attempts: (prev?.attempts ?? 0) + 1,
   };
-  return { ...save, boards: save.boards + 1, levels: { ...save.levels, [key]: record } };
+  const wasPerfect = (prev?.stars ?? 0) >= 3;
+  const gained = !wasPerfect && stars >= 3 ? 1 : 0;
+  return {
+    ...save,
+    perfect: save.perfect + gained,
+    boards: save.boards + 1,
+    levels: { ...save.levels, [key]: record },
+  };
 }
 
-/** Records a solved daily board once. Fails and replays leave the save untouched. */
+/** Records a solved daily board once. Replays leave the save untouched. */
 export function recordDailyRun(save: ArrowsSave, result: ArrowsResult): ArrowsSave {
   if (result.mode !== "daily" || !result.date) return save;
   if (!result.solved) return save;
