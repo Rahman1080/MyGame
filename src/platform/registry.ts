@@ -78,6 +78,42 @@ export const GAMES: GameDescriptor[] = [
     },
     load: () => import("../games/arrows"),
   },
+  {
+    meta: {
+      id: "snake",
+      name: "CYBER SNAKE",
+      tagline: "Neon trail & combos",
+      icon: "snake",
+      accent: "#00F2FF",
+      status: "ready",
+      hasGauntlet: false,
+    },
+    load: () => import("../games/snake"),
+  },
+  {
+    meta: {
+      id: "breaker",
+      name: "NEON BREAKER",
+      tagline: "Laser brick breaker",
+      icon: "breaker",
+      accent: "#FF007F",
+      status: "ready",
+      hasGauntlet: false,
+    },
+    load: () => import("../games/breaker"),
+  },
+  {
+    meta: {
+      id: "matrix",
+      name: "CYBER 2048",
+      tagline: "Merge the numbers",
+      icon: "matrix",
+      accent: "#FFD700",
+      status: "ready",
+      hasGauntlet: false,
+    },
+    load: () => import("../games/matrix"),
+  },
 ];
 
 export function findGame(id: string): GameDescriptor | undefined {

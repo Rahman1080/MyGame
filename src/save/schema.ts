@@ -230,6 +230,10 @@ export interface ArrowsSave {
   daily: Record<string, ArrowsDailyRecord>;
 }
 
+export interface BasicScoreSave {
+  best: number;
+}
+
 export interface SaveV2 {
   version: 2;
   profile: ProfileSave;
@@ -240,6 +244,9 @@ export interface SaveV2 {
     glyph: GlyphSave;
     blocks: BlocksSave;
     arrows: ArrowsSave;
+    snake: BasicScoreSave;
+    breaker: BasicScoreSave;
+    matrix: BasicScoreSave;
   };
 }
 
@@ -300,6 +307,9 @@ export function defaultSaveV2(): SaveV2 {
         bestDailyStreak: 0,
         daily: {},
       },
+      snake: { best: 0 },
+      breaker: { best: 0 },
+      matrix: { best: 0 },
     },
   };
 }
@@ -477,6 +487,18 @@ export function sanitizeV2(raw: unknown): SaveV2 {
       d.games.arrows.bestDailyStreak = asCount(a.bestDailyStreak);
       d.games.arrows.daily = asArrowsDaily(a.daily);
     }
+  }
+  if (g.snake && typeof g.snake === "object") {
+    const s = g.snake as Record<string, unknown>;
+    d.games.snake.best = asCount(s.best);
+  }
+  if (g.breaker && typeof g.breaker === "object") {
+    const b = g.breaker as Record<string, unknown>;
+    d.games.breaker.best = asCount(b.best);
+  }
+  if (g.matrix && typeof g.matrix === "object") {
+    const m = g.matrix as Record<string, unknown>;
+    d.games.matrix.best = asCount(m.best);
   }
   d.version = 2;
   return d;

@@ -2,8 +2,18 @@ import { describe, expect, it } from "vitest";
 import { findGame, GAMES, isGameId } from "../src/platform/registry";
 
 describe("game registry", () => {
-  it("exposes the six arcade game ids in display order", () => {
-    expect(GAMES.map((g) => g.meta.id)).toEqual(["glowtrail", "fusion", "prism", "glyph", "blocks", "arrows"]);
+  it("exposes the arcade game ids in display order", () => {
+    expect(GAMES.map((g) => g.meta.id)).toEqual([
+      "glowtrail",
+      "fusion",
+      "prism",
+      "glyph",
+      "blocks",
+      "arrows",
+      "snake",
+      "breaker",
+      "matrix",
+    ]);
   });
 
   it("every descriptor has display metadata", () => {

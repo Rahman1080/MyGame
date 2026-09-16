@@ -28,6 +28,26 @@ export class MatrixController {
     this.renderer = new MatrixRenderer();
   }
 
+  mountArcade(
+    container: HTMLElement,
+    onBack: () => void,
+    save: { best: number },
+    onSave: (s: { best: number }) => void,
+  ): void {
+    this.container = container;
+    this.onBack = onBack;
+    this.state = createMatrixGame(4, save.best ?? 0);
+    this.renderDom();
+    this.setupListeners();
+    this.onSave = () => {
+      if (this.state.score > save.best) {
+        save.best = this.state.score;
+        onSave({ best: save.best });
+      }
+    };
+    this.paint();
+  }
+
   mount(
     container: HTMLElement,
     onBack: () => void,

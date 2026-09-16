@@ -30,6 +30,26 @@ export class BreakerController {
     this.renderer = new BreakerRenderer();
   }
 
+  mountArcade(
+    container: HTMLElement,
+    onBack: () => void,
+    save: { best: number },
+    onSave: (s: { best: number }) => void,
+  ): void {
+    this.container = container;
+    this.onBack = onBack;
+    this.state = createBreakerGame(360, 480, save.best ?? 0);
+    this.renderDom();
+    this.setupListeners();
+    this.onSave = () => {
+      if (this.state.score > save.best) {
+        save.best = this.state.score;
+        onSave({ best: save.best });
+      }
+    };
+    this.startLoop();
+  }
+
   mount(
     container: HTMLElement,
     onBack: () => void,
