@@ -2341,6 +2341,41 @@ button:focus-visible,
   color: var(--nar);
 }
 
+.nar-level.perfect {
+  border-color: rgba(255, 200, 87, 0.55);
+  box-shadow: 0 0 14px rgba(255, 200, 87, 0.25);
+}
+
+.nar-records {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  width: 100%;
+}
+
+.nar-record {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: rgba(10, 16, 28, 0.7);
+}
+
+.nar-record .k {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  opacity: 0.65;
+}
+
+.nar-record .v {
+  font-family: var(--display, "Orbitron", sans-serif);
+  font-size: 14px;
+  color: var(--nar);
+}
+
 .nar-hud {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -2430,8 +2465,8 @@ button:focus-visible,
 
 .nar-cell.lane,
 .nar-tile.lane {
-  background: rgba(79, 195, 255, 0.16);
-  box-shadow: inset 0 0 0 1px rgba(79, 195, 255, 0.4);
+  background: rgba(156, 255, 79, 0.14);
+  box-shadow: inset 0 0 0 1px rgba(156, 255, 79, 0.38);
 }
 
 .nar-cell.lane-block,
@@ -2454,8 +2489,23 @@ button:focus-visible,
     inset 0 1px 0 rgba(255, 255, 255, 0.18),
     inset 0 -3px 6px rgba(0, 0, 0, 0.5),
     0 4px 10px rgba(0, 0, 0, 0.4);
-  color: var(--nar);
+  color: var(--nar-tile, var(--nar));
   transition: transform 0.12s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+.nar-tile.tier0 { --nar-tile: #4fc3ff; }
+.nar-tile.tier1 { --nar-tile: #b46bff; }
+.nar-tile.tier2 { --nar-tile: #ffc857; }
+.nar-tile.tier3 { --nar-tile: #ff6b9a; }
+
+.nar-tile.len2 .nar-tip,
+.nar-tile.len3 .nar-tip {
+  width: 70%;
+  height: 70%;
+}
+
+.nar-tile.len3 .nar-tip {
+  filter: drop-shadow(0 0 9px currentColor);
 }
 
 .nar-tile.tail {
@@ -2467,7 +2517,7 @@ button:focus-visible,
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.22),
     inset 0 -3px 6px rgba(0, 0, 0, 0.5),
-    0 0 14px rgba(79, 195, 255, 0.35);
+    0 0 14px color-mix(in srgb, var(--nar-tile, var(--nar)) 40%, transparent);
 }
 
 .nar-tile.held {
@@ -2476,8 +2526,9 @@ button:focus-visible,
 }
 
 .nar-tile.locked {
-  color: #8fa2b3;
-  background: linear-gradient(160deg, #2a2536 0%, #14101f 100%);
+  color: var(--nar-tile, #8fa2b3);
+  background: linear-gradient(160deg, #241f30 0%, #100d1a 100%);
+  filter: saturate(0.85) brightness(0.9);
 }
 
 .nar-tile.pressed {
