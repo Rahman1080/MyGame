@@ -1,7 +1,7 @@
 import "./styles/globals.css";
 import "./styles/game.css";
 import { startRouter } from "./platform/router";
-import { NoopAdsService } from "./platform/services/ads";
+import { NoopAdsService } from "./platform/services/reward";
 import { createAudio, createHaptics } from "./platform/services/audio";
 import { rngFromSeed } from "./platform/services/rng";
 import { createSaveService } from "./platform/services/save";

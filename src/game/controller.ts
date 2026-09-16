@@ -19,7 +19,7 @@ import { applyStreak, ensureDaily, loadSave, persistSave, recordSolve, starTotal
 import type { SaveData } from "../save/schema";
 import { synth } from "../audio/synth";
 import { hapticFail, hapticPortal, hapticWin } from "../audio/haptics";
-import { noopAds } from "../ads/adService";
+import { noopAds } from "../rewards/rewardService";
 
 import { generateEndlessPuzzle } from "./endless";
 
