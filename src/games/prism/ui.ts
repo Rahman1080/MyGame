@@ -355,28 +355,33 @@ function setToast(message: string): void {
 }
 
 function openPuzzle(id: string): void {
-  const p = puzzleById(id, today());
-  if (!p) return;
-  const match = /^prism-(\d+)$/.exec(p.id);
-  const level = match ? Number(match[1]) : 0;
-  if (level > 0 && !isLevelUnlocked(level)) return;
-  puzzle = p;
-  initialTubes = cloneTubes(p.tubes);
-  state = createState(p.seed, p.tubes, p.colors, p.capacity);
-  selected = null;
-  invalid = null;
-  hintMove = null;
-  unsolvable = false;
-  won = null;
-  timedOut = false;
-  hintsUsed = 0;
-  moving = false;
-  fx = emptyFx();
-  startTimer(level > 0 ? levelTimeLimitMs(level) : 0);
-  if (level > 0) bumpAttempt(level);
-  screen = "play";
-  build();
-  setToast("");
+  try {
+    const p = puzzleById(id, today());
+    if (!p) return;
+    const match = /^prism-(\d+)$/.exec(p.id);
+    const level = match ? Number(match[1]) : 0;
+    if (level > 0 && !isLevelUnlocked(level)) return;
+    puzzle = p;
+    initialTubes = cloneTubes(p.tubes);
+    state = createState(p.seed, p.tubes, p.colors, p.capacity);
+    selected = null;
+    invalid = null;
+    hintMove = null;
+    unsolvable = false;
+    won = null;
+    timedOut = false;
+    hintsUsed = 0;
+    moving = false;
+    fx = emptyFx();
+    startTimer(level > 0 ? levelTimeLimitMs(level) : 0);
+    if (level > 0) bumpAttempt(level);
+    screen = "play";
+    build();
+    setToast("");
+  } catch (err) {
+    console.error("Prism puzzle load error:", err);
+    setToast("Could not load puzzle. Please select another level.");
+  }
 }
 
 function backToChoose(): void {
@@ -512,7 +517,16 @@ async function useHint(): Promise<void> {
   if (!state || !ctx || moving || screen !== "play" || state.status !== "playing") return;
   const result = hint(state);
   if (result.kind === "solved") return;
+  if (result.kind === "unsolvable" && !result.certain) {
+    setToast("No obvious solution from this position. Try undoing a move!");
+    ctx.audio.invalid();
+    return;
+  }
+  const adStart = performance.now();
   const granted = ctx.ads.enabled ? await ctx.ads.rewarded().show() : true;
+  const adElapsed = performance.now() - adStart;
+  startedAt += adElapsed;
+
   if (!hintGate(ctx.ads.enabled, granted)) {
     setToast("Finish the ad to unlock the hint.");
     return;
@@ -530,13 +544,18 @@ async function useHint(): Promise<void> {
     renderHud();
     draw();
   } else if (result.kind === "unsolvable") {
-    hintMove = null;
-    unsolvable = true;
-    screen = "over";
-    ctx.audio.invalid();
-    ctx.haptics.fail();
-    renderOverlay();
-    draw();
+    if (result.certain) {
+      hintMove = null;
+      unsolvable = true;
+      screen = "over";
+      ctx.audio.invalid();
+      ctx.haptics.fail();
+      renderOverlay();
+      draw();
+    } else {
+      setToast("No path found from here. Try undoing a move!");
+      ctx.audio.invalid();
+    }
   }
 }
 
@@ -600,6 +619,7 @@ function handleTap(index: number): void {
     return;
   }
   if (canPour(state, selected, index)) {
+    setToast("");
     doPour(selected, index);
     return;
   }

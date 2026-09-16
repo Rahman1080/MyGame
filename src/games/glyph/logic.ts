@@ -202,7 +202,8 @@ export function evaluateGuess(answer: string, guess: string): TileMark[] {
 export function dailyConfig(date: string): DailyConfig {
   const rng = mulberry32(hashString(dailySeed(date, "glyph")));
   const entry = ANSWER_WORDS[Math.floor(rng() * ANSWER_WORDS.length)]!;
-  const modifier = MODIFIERS[Math.floor(rng() * MODIFIERS.length)]!;
+  let modifier = MODIFIERS[Math.floor(rng() * MODIFIERS.length)]!;
+  if (modifier === "double" && !doubledLetter(entry.word)) modifier = "clear";
   return { date, answer: entry.word, category: entry.category, modifier };
 }
 
@@ -216,12 +217,14 @@ export function levelConfig(level: number): GlyphLevelConfig {
   const answer = LEVEL_ORDER[safe - 1]!;
   const tier = tierForLevel(safe, GLYPH_LEVELS);
   const rng = mulberry32(hashString(`glyph:level:${safe}`));
+  let modifier = modifierForTier(tier, rng);
+  if (modifier === "double" && !doubledLetter(answer)) modifier = "clear";
   return {
     level: safe,
     tier,
     answer,
     category: categoryFor(answer),
-    modifier: modifierForTier(tier, rng),
+    modifier,
     timeLimitMs: timeLimitMs(safe, GLYPH_LEVELS),
   };
 }
@@ -290,12 +293,27 @@ function applyModifierProgress(state: GlyphState): GlyphState {
     const gained = last.marks.filter((mark) => mark !== "absent").length;
     let energy = next.energy + gained;
     const clues = next.clues.slice();
+    const knownIndices = new Set<number>();
+    for (const guess of next.guesses) {
+      for (let i = 0; i < guess.word.length; i++) {
+        if (guess.marks[i] === "correct") knownIndices.add(i);
+      }
+    }
+    for (const c of clues) knownIndices.add(c.index);
+
     while (energy >= ENERGY_PER_CLUE && clues.length < GLYPH_MAX_CLUES) {
-      const index = clues.length;
-      const letter = next.answer[index];
-      if (letter === undefined) break;
+      let targetIndex = -1;
+      for (let i = 0; i < next.answer.length; i++) {
+        if (!knownIndices.has(i)) {
+          targetIndex = i;
+          break;
+        }
+      }
+      if (targetIndex < 0) break;
+      const letter = next.answer[targetIndex]!;
       energy -= ENERGY_PER_CLUE;
-      clues.push({ index, letter });
+      knownIndices.add(targetIndex);
+      clues.push({ index: targetIndex, letter });
     }
     next = { ...next, energy, clues };
   }

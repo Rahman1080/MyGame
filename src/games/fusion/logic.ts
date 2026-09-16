@@ -48,6 +48,7 @@ export interface FusionState {
   status: "playing" | "over";
   nextId: number;
   lastMerge: MergeEvent | null;
+  mergeEvents: MergeEvent[];
 }
 
 export function orbRadius(tier: number): number {
@@ -127,6 +128,7 @@ export function createState(seed: string, queue?: readonly number[]): FusionStat
     status: "playing",
     nextId: 1,
     lastMerge: null,
+    mergeEvents: [],
   };
 }
 
@@ -190,12 +192,14 @@ function resolveMerges(state: FusionState, col: number): void {
     state.maxTier = Math.max(state.maxTier, resultTier);
     state.score += scoreForMerge(resultTier, state.combo);
     const placed = stack[at];
-    state.lastMerge = {
+    const event: MergeEvent = {
       col,
       tier: resultTier,
       combo: state.combo,
       y: placed ? placed.y : lower.y,
     };
+    state.lastMerge = event;
+    state.mergeEvents.push(event);
   }
 }
 
@@ -250,6 +254,7 @@ export function drop(state: FusionState, col: number): boolean {
   state.queueIndex += 1;
   state.combo = 0;
   state.lastMerge = null;
+  state.mergeEvents = [];
   return true;
 }
 

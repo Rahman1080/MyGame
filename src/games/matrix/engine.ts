@@ -69,6 +69,7 @@ export interface MatrixMoveResult {
   moved: boolean;
   scoreGained: number;
   mergedValues: number[];
+  mergedTiles?: { r: number; c: number; value: number }[];
   reached2048: boolean;
   isGameOver: boolean;
   spawnedTile?: { r: number; c: number; value: number } | null;
@@ -83,6 +84,7 @@ export function moveMatrix(
     moved: false,
     scoreGained: 0,
     mergedValues: [],
+    mergedTiles: [],
     reached2048: false,
     isGameOver: false,
   };
@@ -118,6 +120,7 @@ export function moveMatrix(
   let moved = false;
   let gained = 0;
   const mergedVals: number[] = [];
+  const mergedCoords: { r: number; c: number; value: number }[] = [];
 
   for (let r = 0; r < size; r++) {
     const row = current[r]!.filter((v) => v !== null) as number[];
@@ -130,6 +133,7 @@ export function moveMatrix(
         mergedRow.push(merged);
         gained += merged;
         mergedVals.push(merged);
+        mergedCoords.push({ r, c: mergedRow.length - 1, value: merged });
         if (merged === 2048 && !state.won) {
           result.reached2048 = true;
           state.won = true;
@@ -157,6 +161,17 @@ export function moveMatrix(
   // Rotate back to original orientation
   const backRotations = (4 - rotations) % 4;
   for (let i = 0; i < backRotations; i++) current = rotate(current);
+
+  // Rotate merged coordinates back to original orientation
+  const rotatePoint = (pt: { r: number; c: number }): { r: number; c: number } => ({
+    r: pt.c,
+    c: size - 1 - pt.r,
+  });
+  result.mergedTiles = mergedCoords.map((mc) => {
+    let p = { r: mc.r, c: mc.c };
+    for (let i = 0; i < backRotations; i++) p = rotatePoint(p);
+    return { r: p.r, c: p.c, value: mc.value };
+  });
 
   if (moved) {
     // Save history for undo

@@ -89,7 +89,9 @@ function buildConfig(level: number): FusionLevelConfig {
     budget: 24,
     par: parFor(24),
     timed: isTimedLevel(safe, FUSION_LEVELS),
-    timeLimitMs: 0,
+    timeLimitMs: isTimedLevel(safe, FUSION_LEVELS)
+      ? timeLimitMs(safe, FUSION_LEVELS) * FUSION_TIME_SCALE
+      : 0,
     seed,
     queue,
   };

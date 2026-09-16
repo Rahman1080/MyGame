@@ -1,3 +1,4 @@
+import { getGameIcon } from "../../ui/gameIcons";
 import { ICON_MUTE, ICON_UNMUTE } from "../../ui/icons";
 import { GAMES, isGameId } from "../registry";
 import type { SaveService } from "../services/save";
@@ -36,6 +37,7 @@ export function renderHome(root: HTMLElement, deps: HomeDeps, navigate: Navigate
     return `<button class="arcade-card${ready ? "" : " soon"}" style="--accent:${meta.accent}" data-game="${meta.id}" ${
       ready ? "" : "disabled"
     } aria-label="${label}">
+      <div class="arcade-card-icon" aria-hidden="true">${getGameIcon(meta.id)}</div>
       <span class="arcade-name">${escapeHtml(meta.name)}</span>
       <span class="arcade-tag">${escapeHtml(meta.tagline)}</span>
       <span class="arcade-state">${ready ? "PLAY" : "SOON"}</span>
@@ -57,6 +59,7 @@ export function renderHome(root: HTMLElement, deps: HomeDeps, navigate: Navigate
     </header>
 
     <button class="continue-card arcade-continue" data-act="continue">
+      <div class="continue-icon" style="color:${last.meta.accent}" aria-hidden="true">${getGameIcon(last.meta.id)}</div>
       <span class="continue-text">
         <span class="k">CONTINUE PLAYING</span>
         <span class="lvl-big">${escapeHtml(last.meta.name)}</span>

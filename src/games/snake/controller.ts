@@ -25,6 +25,9 @@ export class SnakeController {
   private onBack: (() => void) | null = null;
   private onSave: ((s: SaveData) => void) | null = null;
   private saveData: SaveData | null = null;
+  private arcadeSave: { best: number } | null = null;
+  private onArcadeSave: ((s: { best: number }) => void) | null = null;
+  private abortController: AbortController | null = null;
 
   constructor() {
     this.state = createSnakeGame(20, 20, 0, "normal");
@@ -39,15 +42,11 @@ export class SnakeController {
   ): void {
     this.container = container;
     this.onBack = onBack;
+    this.arcadeSave = save;
+    this.onArcadeSave = onSave;
     this.state = createSnakeGame(20, 20, save.best ?? 0, "normal");
     this.renderDom();
     this.setupListeners();
-    this.onSave = () => {
-      if (this.state.score > save.best) {
-        save.best = this.state.score;
-        onSave({ best: save.best });
-      }
-    };
     this.startLoop();
   }
 
@@ -137,87 +136,129 @@ export class SnakeController {
     }
   }
 
+  private checkSaveHighScore(): void {
+    if (this.state.score > this.state.highScore) {
+      this.state.highScore = this.state.score;
+    }
+    if (this.arcadeSave && this.onArcadeSave) {
+      if (this.state.score > this.arcadeSave.best) {
+        this.arcadeSave.best = this.state.score;
+        this.onArcadeSave({ best: this.arcadeSave.best });
+      }
+    } else if (this.saveData && this.onSave) {
+      const updated = recordHighScore(this.saveData, "snake", this.state.score);
+      this.saveData = updated;
+      this.onSave(updated);
+    }
+  }
+
   private setupListeners(): void {
     if (!this.container) return;
+    this.abortController?.abort();
+    this.abortController = new AbortController();
+    const { signal } = this.abortController;
 
-    this.container.addEventListener("click", (e) => {
-      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act], [data-dir]");
-      if (!target) return;
-
-      if (target.dataset.act === "back") {
-        synth.tap();
-        this.destroy();
-        this.onBack?.();
-        return;
-      }
-
-      if (target.dataset.act === "speed") {
-        synth.tap();
-        const modes: SpeedMode[] = ["chill", "normal", "hyper"];
-        const curIdx = modes.indexOf(this.state.speedMode);
-        const nextMode = modes[(curIdx + 1) % modes.length]!;
-        setSpeedMode(this.state, nextMode);
-        const btn = this.container?.querySelector("#snake-speed-btn");
-        if (btn) btn.textContent = `SPEED: ${nextMode.toUpperCase()}`;
-        return;
-      }
-
-      if (target.dataset.act === "pause") {
-        synth.tap();
-        this.state.paused = !this.state.paused;
-        const pauseSpan = this.container?.querySelector("#pause-text");
-        if (pauseSpan) pauseSpan.textContent = this.state.paused ? "Resume" : "Pause";
-        return;
-      }
-
-      if (target.dataset.act === "restart") {
-        synth.tap();
-        this.restart();
-        return;
-      }
-
-      const dir = target.dataset.dir;
-      if (dir) {
-        synth.step();
-        hapticTap();
-        if (dir === "up") setDirection(this.state, { x: 0, y: -1 });
-        if (dir === "down") setDirection(this.state, { x: 0, y: 1 });
-        if (dir === "left") setDirection(this.state, { x: -1, y: 0 });
-        if (dir === "right") setDirection(this.state, { x: 1, y: 0 });
-      }
-    });
-
-    // Touch swipe gestures
-    if (this.canvas) {
-      this.canvas.addEventListener("touchstart", (e) => {
-        const touch = e.touches[0];
-        if (!touch) return;
-        this.touchStartX = touch.clientX;
-        this.touchStartY = touch.clientY;
-      }, { passive: true });
-
-      this.canvas.addEventListener("touchend", (e) => {
-        const touch = e.changedTouches[0];
-        if (!touch) return;
-        const dx = touch.clientX - this.touchStartX;
-        const dy = touch.clientY - this.touchStartY;
-        const absX = Math.abs(dx);
-        const absY = Math.abs(dy);
-
-        if (Math.max(absX, absY) > 20) {
+    // Instant pointerdown for D-pad buttons
+    this.container.addEventListener(
+      "pointerdown",
+      (e) => {
+        const target = (e.target as HTMLElement).closest<HTMLElement>("[data-dir]");
+        if (!target) return;
+        const dir = target.dataset.dir;
+        if (dir) {
           synth.step();
           hapticTap();
-          if (absX > absY) {
-            setDirection(this.state, { x: dx > 0 ? 1 : -1, y: 0 });
-          } else {
-            setDirection(this.state, { x: 0, y: dy > 0 ? 1 : -1 });
-          }
+          if (dir === "up") setDirection(this.state, { x: 0, y: -1 });
+          if (dir === "down") setDirection(this.state, { x: 0, y: 1 });
+          if (dir === "left") setDirection(this.state, { x: -1, y: 0 });
+          if (dir === "right") setDirection(this.state, { x: 1, y: 0 });
         }
-      }, { passive: true });
+      },
+      { signal },
+    );
+
+    this.container.addEventListener(
+      "click",
+      (e) => {
+        const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
+        if (!target) return;
+
+        if (target.dataset.act === "back") {
+          synth.tap();
+          this.destroy();
+          this.onBack?.();
+          return;
+        }
+
+        if (target.dataset.act === "speed") {
+          synth.tap();
+          const modes: SpeedMode[] = ["chill", "normal", "hyper"];
+          const curIdx = modes.indexOf(this.state.speedMode);
+          const nextMode = modes[(curIdx + 1) % modes.length]!;
+          setSpeedMode(this.state, nextMode);
+          const btn = this.container?.querySelector("#snake-speed-btn");
+          if (btn) btn.textContent = `SPEED: ${nextMode.toUpperCase()}`;
+          return;
+        }
+
+        if (target.dataset.act === "pause") {
+          synth.tap();
+          this.state.paused = !this.state.paused;
+          const pauseSpan = this.container?.querySelector("#pause-text");
+          if (pauseSpan) pauseSpan.textContent = this.state.paused ? "Resume" : "Pause";
+          return;
+        }
+
+        if (target.dataset.act === "restart") {
+          synth.tap();
+          this.restart();
+          return;
+        }
+      },
+      { signal },
+    );
+
+    // Responsive touch swipe gestures (triggers immediately during drag)
+    if (this.canvas) {
+      this.canvas.addEventListener(
+        "touchstart",
+        (e) => {
+          const touch = e.touches[0];
+          if (!touch) return;
+          this.touchStartX = touch.clientX;
+          this.touchStartY = touch.clientY;
+        },
+        { passive: true, signal },
+      );
+
+      this.canvas.addEventListener(
+        "touchmove",
+        (e) => {
+          const touch = e.touches[0];
+          if (!touch) return;
+          const dx = touch.clientX - this.touchStartX;
+          const dy = touch.clientY - this.touchStartY;
+          const absX = Math.abs(dx);
+          const absY = Math.abs(dy);
+
+          if (Math.max(absX, absY) > 18) {
+            synth.step();
+            hapticTap();
+            if (absX > absY) {
+              setDirection(this.state, { x: dx > 0 ? 1 : -1, y: 0 });
+            } else {
+              setDirection(this.state, { x: 0, y: dy > 0 ? 1 : -1 });
+            }
+            this.touchStartX = touch.clientX;
+            this.touchStartY = touch.clientY;
+          }
+        },
+        { passive: true, signal },
+      );
     }
 
     // Keyboard controls
-    window.addEventListener("keydown", this.handleKeyDown);
+    window.addEventListener("keydown", this.handleKeyDown, { signal });
   }
 
   private handleKeyDown = (e: KeyboardEvent): void => {
@@ -242,7 +283,8 @@ export class SnakeController {
   };
 
   private restart(): void {
-    const currentHigh = this.saveData?.arcadeHighScores?.["snake"] ?? this.state.highScore;
+    const currentHigh =
+      this.arcadeSave?.best ?? this.saveData?.arcadeHighScores?.["snake"] ?? this.state.highScore;
     const mode = this.state.speedMode;
     this.state = createSnakeGame(20, 20, currentHigh, mode);
     const go = this.container?.querySelector<HTMLElement>("#snake-gameover");
@@ -259,30 +301,28 @@ export class SnakeController {
 
       if (res.ateFood) {
         this.renderer.triggerChomp();
-        if (res.foodType === "multiplier" || res.foodType === "phase" || res.foodType === "slowmo") {
-          synth.powerup();
-        } else {
-          synth.combo();
-        }
+        synth.combo();
         hapticTap();
+        this.checkSaveHighScore();
 
-        // Particles & Floating score popup
-        const head = this.state.snake[0];
-        if (head && this.canvas) {
-          const rect = this.canvas.getBoundingClientRect();
-          const cellW = (rect.width - 24) / this.state.width;
-          const cellH = (rect.height - 24) / this.state.height;
-          const px = 12 + (head.x + 0.5) * cellW;
-          const py = 12 + (head.y + 0.5) * cellH;
+        // Spawn particles and score text popup
+        if (this.canvas) {
+          const dpr = window.devicePixelRatio || 1;
+          const w = this.canvas.width / dpr;
+          const h = this.canvas.height / dpr;
+          const cellW = w / this.state.width;
+          const cellH = h / this.state.height;
+          const px = ((res.ateX ?? 0) + 0.5) * cellW;
+          const py = ((res.ateY ?? 0) + 0.5) * cellH;
 
           const color =
             res.foodType === "multiplier"
               ? "#FFD700"
               : res.foodType === "slowmo"
-              ? "#00E5FF"
-              : res.foodType === "phase"
-              ? "#E056FD"
-              : "#00F2FF";
+                ? "#29DDF4"
+                : res.foodType === "phase"
+                  ? "#E45CFF"
+                  : "#00F2FF";
 
           this.renderer.emitFoodBurst(px, py, color, 16);
 
@@ -295,17 +335,25 @@ export class SnakeController {
         }
       }
 
-      if (res.died) {
-        synth.gameover();
-        this.renderer.triggerShake(10, 0.35);
-        if (this.saveData && this.onSave) {
-          const updated = recordHighScore(this.saveData, "snake", this.state.score);
-          this.saveData = updated;
-          this.onSave(updated);
-        }
+      if (res.won) {
+        synth.star();
+        this.renderer.triggerShake(12, 0.5);
+        this.checkSaveHighScore();
         const go = this.container?.querySelector<HTMLElement>("#snake-gameover");
         const stats = this.container?.querySelector<HTMLElement>("#final-stats");
+        const title = this.container?.querySelector<HTMLElement>("#snake-gameover h2");
         if (go) go.style.display = "flex";
+        if (title) title.textContent = "VICTORY! BOARD CLEARED!";
+        if (stats) stats.textContent = `SCORE: ${this.state.score} · BEST: ${this.state.highScore}`;
+      } else if (res.died) {
+        synth.gameover();
+        this.renderer.triggerShake(10, 0.35);
+        this.checkSaveHighScore();
+        const go = this.container?.querySelector<HTMLElement>("#snake-gameover");
+        const stats = this.container?.querySelector<HTMLElement>("#final-stats");
+        const title = this.container?.querySelector<HTMLElement>("#snake-gameover h2");
+        if (go) go.style.display = "flex";
+        if (title) title.textContent = "GAME OVER";
         if (stats) stats.textContent = `SCORE: ${this.state.score} · BEST: ${this.state.highScore}`;
       }
 
@@ -345,7 +393,8 @@ export class SnakeController {
       cancelAnimationFrame(this.animId);
       this.animId = 0;
     }
-    window.removeEventListener("keydown", this.handleKeyDown);
+    this.abortController?.abort();
+    this.abortController = null;
     if (this.container) {
       this.container.innerHTML = "";
     }

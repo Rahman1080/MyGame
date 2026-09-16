@@ -28,6 +28,9 @@ export class WordSearchController {
   private onBack: (() => void) | null = null;
   private onSave: ((s: SaveData) => void) | null = null;
   private saveData: SaveData | null = null;
+  private arcadeSave: { best: number } | null = null;
+  private onArcadeSave: ((s: { best: number }) => void) | null = null;
+  private abortController: AbortController | null = null;
 
   constructor() {
     this.state = createWordSearchGame(1, 0, "hard");
@@ -42,15 +45,11 @@ export class WordSearchController {
   ): void {
     this.container = container;
     this.onBack = onBack;
+    this.arcadeSave = save;
+    this.onArcadeSave = onSave;
     this.state = createWordSearchGame(1, save.best ?? 0, "hard");
     this.renderDom();
     this.setupListeners();
-    this.onSave = () => {
-      if (this.state.score > save.best) {
-        save.best = this.state.score;
-        onSave({ best: save.best });
-      }
-    };
     this.startLoop();
   }
 
@@ -159,43 +158,66 @@ export class WordSearchController {
     if (highEl) highEl.textContent = this.state.highScore.toString();
   }
 
+  private checkSaveHighScore(): void {
+    if (this.state.score > this.state.highScore) {
+      this.state.highScore = this.state.score;
+    }
+    if (this.arcadeSave && this.onArcadeSave) {
+      if (this.state.score > this.arcadeSave.best) {
+        this.arcadeSave.best = this.state.score;
+        this.onArcadeSave({ best: this.arcadeSave.best });
+      }
+    } else if (this.saveData && this.onSave) {
+      const updated = recordHighScore(this.saveData, "wordsearch", this.state.score);
+      this.saveData = updated;
+      this.onSave(updated);
+    }
+  }
+
   private setupListeners(): void {
     if (!this.container) return;
+    this.abortController?.abort();
+    this.abortController = new AbortController();
+    const { signal } = this.abortController;
 
-    this.container.addEventListener("click", (e) => {
-      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
-      if (!target) return;
+    this.container.addEventListener(
+      "click",
+      (e) => {
+        const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
+        if (!target) return;
 
-      if (target.dataset.act === "back") {
-        synth.tap();
-        this.destroy();
-        this.onBack?.();
-        return;
-      }
+        if (target.dataset.act === "back") {
+          synth.tap();
+          this.destroy();
+          this.onBack?.();
+          return;
+        }
 
-      if (target.dataset.act === "diff") {
-        synth.tap();
-        const diffs: WordSearchDifficulty[] = ["easy", "hard", "master"];
-        const curIdx = diffs.indexOf(this.state.difficulty);
-        const next = diffs[(curIdx + 1) % diffs.length]!;
-        setWordSearchDifficulty(this.state, next);
-        this.renderDom();
-        this.setupListeners();
-        return;
-      }
+        if (target.dataset.act === "diff") {
+          synth.tap();
+          const diffs: WordSearchDifficulty[] = ["easy", "hard", "master"];
+          const curIdx = diffs.indexOf(this.state.difficulty);
+          const next = diffs[(curIdx + 1) % diffs.length]!;
+          setWordSearchDifficulty(this.state, next);
+          this.renderDom();
+          this.setupListeners();
+          return;
+        }
 
-      if (target.dataset.act === "hint") {
-        synth.tap();
-        requestHint(this.state);
-        return;
-      }
+        if (target.dataset.act === "hint") {
+          synth.tap();
+          requestHint(this.state);
+          return;
+        }
 
-      if (target.dataset.act === "next-level") {
-        synth.tap();
-        this.advanceNextLevel();
-        return;
-      }
-    });
+        if (target.dataset.act === "next-level") {
+          synth.tap();
+          this.advanceNextLevel();
+          return;
+        }
+      },
+      { signal },
+    );
 
     if (this.canvas) {
       const getCellFromEvent = (clientX: number, clientY: number): GridPos | null => {
@@ -217,21 +239,34 @@ export class WordSearchController {
         return null;
       };
 
-      this.canvas.addEventListener("pointerdown", (e) => {
-        const cell = getCellFromEvent(e.clientX, e.clientY);
-        if (!cell) return;
-        this.isDragging = true;
-        this.dragStartPos = cell;
-        updateSelection(this.state, cell, cell);
-      });
+      this.canvas.addEventListener(
+        "pointerdown",
+        (e) => {
+          try {
+            this.canvas?.setPointerCapture(e.pointerId);
+          } catch {
+            // Ignore if pointer capture fails
+          }
+          const cell = getCellFromEvent(e.clientX, e.clientY);
+          if (!cell) return;
+          this.isDragging = true;
+          this.dragStartPos = cell;
+          updateSelection(this.state, cell, cell);
+        },
+        { signal },
+      );
 
-      this.canvas.addEventListener("pointermove", (e) => {
-        if (!this.isDragging || !this.dragStartPos) return;
-        const cell = getCellFromEvent(e.clientX, e.clientY);
-        if (cell) {
-          updateSelection(this.state, this.dragStartPos, cell);
-        }
-      });
+      this.canvas.addEventListener(
+        "pointermove",
+        (e) => {
+          if (!this.isDragging || !this.dragStartPos) return;
+          const cell = getCellFromEvent(e.clientX, e.clientY);
+          if (cell) {
+            updateSelection(this.state, this.dragStartPos, cell);
+          }
+        },
+        { signal },
+      );
 
       const handlePointerEnd = (): void => {
         if (!this.isDragging) return;
@@ -242,18 +277,15 @@ export class WordSearchController {
         if (foundWord) {
           synth.combo();
           hapticTap();
+          this.checkSaveHighScore();
           this.updateWordListDom();
 
           if (this.state.isCompleted) {
             synth.star();
+            this.checkSaveHighScore();
             if (this.canvas) {
               const dpr = window.devicePixelRatio || 1;
               this.renderer.emitVictoryBurst(this.canvas.width / dpr, this.canvas.height / dpr);
-            }
-            if (this.saveData && this.onSave) {
-              const updated = recordHighScore(this.saveData, "wordsearch", this.state.score);
-              this.saveData = updated;
-              this.onSave(updated);
             }
             const modal = this.container?.querySelector<HTMLElement>("#ws-winmodal");
             const stats = this.container?.querySelector<HTMLElement>("#ws-final-stats");
@@ -263,14 +295,15 @@ export class WordSearchController {
         }
       };
 
-      this.canvas.addEventListener("pointerup", handlePointerEnd);
-      this.canvas.addEventListener("pointercancel", handlePointerEnd);
+      this.canvas.addEventListener("pointerup", handlePointerEnd, { signal });
+      this.canvas.addEventListener("pointercancel", handlePointerEnd, { signal });
     }
   }
 
   private advanceNextLevel(): void {
     const nextLvl = this.state.level + 1;
-    const currentHigh = this.saveData?.arcadeHighScores?.["wordsearch"] ?? this.state.highScore;
+    const currentHigh =
+      this.arcadeSave?.best ?? this.saveData?.arcadeHighScores?.["wordsearch"] ?? this.state.highScore;
     const carriedScore = this.state.score;
     const diff = this.state.difficulty;
     this.state = createWordSearchGame(nextLvl, currentHigh, diff);
@@ -306,6 +339,8 @@ export class WordSearchController {
       cancelAnimationFrame(this.animId);
       this.animId = 0;
     }
+    this.abortController?.abort();
+    this.abortController = null;
     if (this.container) {
       this.container.innerHTML = "";
     }

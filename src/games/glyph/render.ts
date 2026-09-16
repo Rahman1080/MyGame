@@ -25,7 +25,7 @@ const SYMBOL: Record<TileMark, string> = { correct: "✓", present: "~", absent:
 const MARK_WORD: Record<TileMark, string> = { correct: "correct", present: "present", absent: "absent" };
 const KEY_WORD: Record<KeyMark, string> = { ...MARK_WORD, hint: "in the word" };
 
-function tile(letter: string, mark: TileMark | null): string {
+function tile(letter: string, mark: TileMark | null, col = 0, isLatest = false): string {
   const hasLetter = letter.length > 0;
   const stateClass = mark ?? (hasLetter ? "draft" : "empty");
   const label = hasLetter
@@ -34,17 +34,19 @@ function tile(letter: string, mark: TileMark | null): string {
       : `${letter.toUpperCase()} pending`
     : "empty";
   const glyph = mark ? SYMBOL[mark] : "";
-  return `<div class="glyph-tile ${stateClass}" role="img" aria-label="${label}"><span class="glyph-letter">${letter.toUpperCase()}</span><span class="glyph-mark" aria-hidden="true">${glyph}</span></div>`;
+  const flip = isLatest && mark ? ` data-flip="true" style="--flip-delay:${col * 100}ms"` : "";
+  return `<div class="glyph-tile ${stateClass}"${flip} role="img" aria-label="${label}"><span class="glyph-letter">${letter.toUpperCase()}</span><span class="glyph-mark" aria-hidden="true">${glyph}</span></div>`;
 }
 
 export function boardHtml(state: GlyphState, draft: string): string {
   const rows: string[] = [];
   for (let r = 0; r < state.maxGuesses; r += 1) {
     const guess = state.guesses[r];
+    const isLatest = r === state.guesses.length - 1;
     const tiles: string[] = [];
     for (let c = 0; c < 5; c += 1) {
       if (guess) {
-        tiles.push(tile(guess.word[c] ?? "", guess.marks[c] ?? "absent"));
+        tiles.push(tile(guess.word[c] ?? "", guess.marks[c] ?? "absent", c, isLatest));
       } else if (r === state.guesses.length && state.status === "playing") {
         tiles.push(tile(draft[c] ?? "", null));
       } else {

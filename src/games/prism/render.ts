@@ -110,10 +110,11 @@ export function unitFromClient(view: PrismView, clientX: number, clientY: number
 }
 
 export function tubeFromPoint(layout: PrismLayout, x: number, y: number): number {
+  const padX = Math.max(0, Math.floor(GAP_X / 2) - 1);
+  const padY = 8;
   for (let i = 0; i < layout.rects.length; i += 1) {
     const r = layout.rects[i]!;
-    const pad = 10;
-    if (x >= r.x - pad && x <= r.x + r.w + pad && y >= r.y - pad && y <= r.y + r.h + pad) return i;
+    if (x >= r.x - padX && x <= r.x + r.w + padX && y >= r.y - padY && y <= r.y + r.h + padY) return i;
   }
   return -1;
 }

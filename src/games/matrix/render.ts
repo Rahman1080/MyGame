@@ -19,6 +19,11 @@ const TILE_THEMES: Record<number, TileTheme> = {
   512: { bg: "#16472b", glow: "#00FF66", text: "#E0FFED", shadowBlur: 20 },
   1024: { bg: "#144955", glow: "#00E5FF", text: "#FFFFFF", shadowBlur: 22 },
   2048: { bg: "#591c5c", glow: "#FF00FF", text: "#FFFFFF", shadowBlur: 26 },
+  4096: { bg: "#4a0e2e", glow: "#FF1493", text: "#FFE4E1", shadowBlur: 28 },
+  8192: { bg: "#0d3b42", glow: "#00FFCC", text: "#E0FFFF", shadowBlur: 30 },
+  16384: { bg: "#36164d", glow: "#BF00FF", text: "#FFFFFF", shadowBlur: 32 },
+  32768: { bg: "#42280d", glow: "#FF8C00", text: "#FFF8DC", shadowBlur: 34 },
+  65536: { bg: "#1a1a2e", glow: "#E024C3", text: "#FFFFFF", shadowBlur: 36 },
 };
 
 export interface MatrixParticle {
@@ -257,7 +262,13 @@ export class MatrixRenderer {
         ctx.textBaseline = "middle";
 
         const fontSize =
-          val < 100 ? cellSize * 0.46 : val < 1000 ? cellSize * 0.38 : cellSize * 0.3;
+          val < 100
+            ? cellSize * 0.46
+            : val < 1000
+              ? cellSize * 0.38
+              : val < 10000
+                ? cellSize * 0.3
+                : cellSize * 0.24;
         ctx.font = `bold ${Math.floor(fontSize)}px "JetBrains Mono", monospace`;
         ctx.fillText(val.toString(), cx, cy);
 

@@ -207,6 +207,9 @@ export function tickBreaker(state: BreakerGameState, dtMs: number): BreakerEvent
   if (state.gameOver || state.paused) return events;
   const dt = dtMs / 1000;
 
+  // Decay paddle velocity so stopped paddle doesn't impart ghost momentum
+  state.paddleVx *= Math.exp(-12 * dt);
+
   // Timers
   if (state.expandTimerMs > 0) {
     state.expandTimerMs -= dtMs;
@@ -346,12 +349,20 @@ export function tickBreaker(state: BreakerGameState, dtMs: number): BreakerEvent
       if (circleRectOverlap(b.x, b.y, b.radius, brick.x, brick.y, brick.width, brick.height)) {
         events.brickHit = true;
 
-        // Determine bounce axis
+        // Determine bounce axis and resolve penetration
         const prevX = b.x - b.vx * dt;
-        if (prevX < brick.x || prevX > brick.x + brick.width) {
-          b.vx = -b.vx;
+        if (prevX < brick.x) {
+          b.vx = -Math.abs(b.vx);
+          b.x = brick.x - b.radius;
+        } else if (prevX > brick.x + brick.width) {
+          b.vx = Math.abs(b.vx);
+          b.x = brick.x + brick.width + b.radius;
+        } else if (b.vy > 0) {
+          b.vy = -Math.abs(b.vy);
+          b.y = brick.y - b.radius;
         } else {
-          b.vy = -b.vy;
+          b.vy = Math.abs(b.vy);
+          b.y = brick.y + brick.height + b.radius;
         }
 
         brick.hitsLeft--;
@@ -432,17 +443,19 @@ function applyPowerUp(state: BreakerGameState, type: BreakerPowerType): void {
   if (type === "multiball") {
     const existing = state.balls[0] ?? {
       x: state.paddleX + state.paddleWidth / 2,
-      y: state.paddleY - 8,
+      y: state.paddleY - 12,
       vx: 180,
       vy: -240,
       radius: 6,
     };
+    const spawnY = Math.min(existing.y, state.paddleY - 14);
     state.balls.push(
-      { ...existing, vx: existing.vx * 0.8 - 120, vy: -Math.abs(existing.vy) },
-      { ...existing, vx: existing.vx * 0.8 + 120, vy: -Math.abs(existing.vy) },
+      { ...existing, y: spawnY, vx: existing.vx * 0.8 - 120, vy: -Math.abs(existing.vy) },
+      { ...existing, y: spawnY, vx: existing.vx * 0.8 + 120, vy: -Math.abs(existing.vy) },
     );
   } else if (type === "expand") {
     state.paddleWidth = state.paddleBaseWidth * 1.5;
+    state.paddleX = Math.max(0, Math.min(state.width - state.paddleWidth, state.paddleX));
     state.expandTimerMs = 8000; // 8s
   } else if (type === "laser") {
     state.laserAmmo += 6;

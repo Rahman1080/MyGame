@@ -678,7 +678,14 @@ function loop(now: number): void {
     if (ticks > 0 && state.status === "playing" && screen === "play") {
       const before = state.merges;
       step(state, ticks);
-      if (state.merges > before && state.lastMerge) onMerge(state.lastMerge);
+      if (state.merges > before) {
+        if (state.mergeEvents && state.mergeEvents.length > 0) {
+          for (const me of state.mergeEvents) onMerge(me);
+          state.mergeEvents = [];
+        } else if (state.lastMerge) {
+          onMerge(state.lastMerge);
+        }
+      }
       if (mode === "level" && levelConfig) {
         if (objectiveMet(state, levelConfig.target)) winLevel();
         else if (isOver(state)) failLevel("overflow");

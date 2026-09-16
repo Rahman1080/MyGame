@@ -24,8 +24,12 @@ export class BreakerController {
   private onBack: (() => void) | null = null;
   private onSave: ((s: SaveData) => void) | null = null;
   private saveData: SaveData | null = null;
+  private arcadeSave: { best: number } | null = null;
+  private onArcadeSave: ((s: { best: number }) => void) | null = null;
+  private abortController: AbortController | null = null;
   private targetPaddleCenterX: number;
   private freezeFrames = 0;
+  private gameOverHandled = false;
 
   constructor() {
     this.state = createBreakerGame(360, 480, 0);
@@ -41,16 +45,13 @@ export class BreakerController {
   ): void {
     this.container = container;
     this.onBack = onBack;
+    this.arcadeSave = save;
+    this.onArcadeSave = onSave;
+    this.gameOverHandled = false;
     this.state = createBreakerGame(360, 480, save.best ?? 0);
     this.targetPaddleCenterX = this.state.paddleX + this.state.paddleWidth / 2;
     this.renderDom();
     this.setupListeners();
-    this.onSave = () => {
-      if (this.state.score > save.best) {
-        save.best = this.state.score;
-        onSave({ best: save.best });
-      }
-    };
     this.startLoop();
   }
 
@@ -129,46 +130,69 @@ export class BreakerController {
     }
   }
 
+  private checkSaveHighScore(): void {
+    if (this.state.score > this.state.highScore) {
+      this.state.highScore = this.state.score;
+    }
+    if (this.arcadeSave && this.onArcadeSave) {
+      if (this.state.score > this.arcadeSave.best) {
+        this.arcadeSave.best = this.state.score;
+        this.onArcadeSave({ best: this.arcadeSave.best });
+      }
+    } else if (this.saveData && this.onSave) {
+      const updated = recordHighScore(this.saveData, "breaker", this.state.score);
+      this.saveData = updated;
+      this.onSave(updated);
+    }
+  }
+
   private setupListeners(): void {
     if (!this.container) return;
+    this.abortController?.abort();
+    this.abortController = new AbortController();
+    const { signal } = this.abortController;
 
-    this.container.addEventListener("click", (e) => {
-      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
-      if (!target) return;
+    this.container.addEventListener(
+      "click",
+      (e) => {
+        const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
+        if (!target) return;
 
-      if (target.dataset.act === "back") {
-        synth.tap();
-        this.destroy();
-        this.onBack?.();
-        return;
-      }
-
-      if (target.dataset.act === "pause") {
-        synth.tap();
-        this.state.paused = !this.state.paused;
-        const txt = this.container?.querySelector("#breaker-pause-txt");
-        if (txt) txt.textContent = this.state.paused ? "Resume" : "Pause";
-        return;
-      }
-
-      if (target.dataset.act === "restart") {
-        synth.tap();
-        this.restart();
-        return;
-      }
-
-      if (target.dataset.act === "action-btn") {
-        if (!this.state.launched) {
-          synth.launch();
-          launchBall(this.state);
-        } else if (this.state.laserAmmo > 0) {
-          synth.laser();
-          fireLaser(this.state);
+        if (target.dataset.act === "back") {
+          synth.tap();
+          this.destroy();
+          this.onBack?.();
+          return;
         }
-      }
-    });
 
-    // Continuous pointer tracking across canvas
+        if (target.dataset.act === "pause") {
+          synth.tap();
+          this.state.paused = !this.state.paused;
+          const txt = this.container?.querySelector("#breaker-pause-txt");
+          if (txt) txt.textContent = this.state.paused ? "Resume" : "Pause";
+          return;
+        }
+
+        if (target.dataset.act === "restart") {
+          synth.tap();
+          this.restart();
+          return;
+        }
+
+        if (target.dataset.act === "action-btn") {
+          if (!this.state.launched) {
+            synth.launch();
+            launchBall(this.state);
+          } else if (this.state.laserAmmo > 0) {
+            synth.laser();
+            fireLaser(this.state);
+          }
+        }
+      },
+      { signal },
+    );
+
+    // Continuous pointer tracking across canvas with pointer capture
     if (this.canvas) {
       const handlePointer = (clientX: number): void => {
         if (!this.canvas) return;
@@ -177,25 +201,35 @@ export class BreakerController {
         this.targetPaddleCenterX = normX * 360;
       };
 
-      this.canvas.addEventListener("pointerdown", (e) => {
-        handlePointer(e.clientX);
-        if (!this.state.launched) {
-          synth.launch();
-          launchBall(this.state);
-        } else if (this.state.laserAmmo > 0) {
-          synth.laser();
-          fireLaser(this.state);
-        }
-      });
+      this.canvas.addEventListener(
+        "pointerdown",
+        (e) => {
+          try {
+            this.canvas?.setPointerCapture(e.pointerId);
+          } catch {
+            // Ignore if pointer capture fails
+          }
+          handlePointer(e.clientX);
+          if (!this.state.launched) {
+            synth.launch();
+            launchBall(this.state);
+          }
+        },
+        { signal },
+      );
 
-      this.canvas.addEventListener("pointermove", (e) => {
-        handlePointer(e.clientX);
-      });
+      this.canvas.addEventListener(
+        "pointermove",
+        (e) => {
+          handlePointer(e.clientX);
+        },
+        { signal },
+      );
     }
 
     // Keyboard controls
-    window.addEventListener("keydown", this.handleKeyDown);
-    window.addEventListener("keyup", this.handleKeyUp);
+    window.addEventListener("keydown", this.handleKeyDown, { signal });
+    window.addEventListener("keyup", this.handleKeyUp, { signal });
   }
 
   private handleKeyDown = (e: KeyboardEvent): void => {
@@ -217,9 +251,11 @@ export class BreakerController {
   };
 
   private restart(): void {
-    const currentHigh = this.saveData?.arcadeHighScores?.["breaker"] ?? this.state.highScore;
+    const currentHigh =
+      this.arcadeSave?.best ?? this.saveData?.arcadeHighScores?.["breaker"] ?? this.state.highScore;
     this.state = createBreakerGame(360, 480, currentHigh);
     this.targetPaddleCenterX = this.state.paddleX + this.state.paddleWidth / 2;
+    this.gameOverHandled = false;
     const go = this.container?.querySelector<HTMLElement>("#breaker-gameover");
     if (go) go.style.display = "none";
   }
@@ -227,73 +263,74 @@ export class BreakerController {
   private startLoop(): void {
     this.lastTime = performance.now();
     const loop = (now: number): void => {
-      const dt = Math.min(48, now - this.lastTime);
+      const dt = Math.min(60, now - this.lastTime);
       this.lastTime = now;
 
-      // Handle paddle key movement
+      // Hit-stop / Freeze frames for heavy impacts
+      if (this.freezeFrames > 0) {
+        this.freezeFrames--;
+        this.animId = requestAnimationFrame(loop);
+        return;
+      }
+
+      // Keyboard paddle steering
       if (this.keysHeld["ArrowLeft"] || this.keysHeld["a"] || this.keysHeld["A"]) {
         this.targetPaddleCenterX = Math.max(
           this.state.paddleWidth / 2,
-          this.targetPaddleCenterX - 10,
+          this.targetPaddleCenterX - 450 * (dt / 1000),
         );
       }
       if (this.keysHeld["ArrowRight"] || this.keysHeld["d"] || this.keysHeld["D"]) {
         this.targetPaddleCenterX = Math.min(
           360 - this.state.paddleWidth / 2,
-          this.targetPaddleCenterX + 10,
+          this.targetPaddleCenterX + 450 * (dt / 1000),
         );
       }
 
-      // Smooth paddle interpolation
-      const curCenter = this.state.paddleX + this.state.paddleWidth / 2;
-      const smoothedCenter = curCenter + (this.targetPaddleCenterX - curCenter) * 0.42;
-      movePaddle(this.state, smoothedCenter, dt / 1000);
+      // Smooth paddle lerp
+      const currentCenterX = this.state.paddleX + this.state.paddleWidth / 2;
+      const smoothCenterX = currentCenterX + (this.targetPaddleCenterX - currentCenterX) * 0.42;
+      movePaddle(this.state, smoothCenterX, dt / 1000);
 
-      // Hit-stop micro-pause
-      if (this.freezeFrames > 0) {
-        this.freezeFrames--;
-      } else {
-        const events = tickBreaker(this.state, dt);
+      const events = tickBreaker(this.state, dt);
 
-        if (events.paddleHit || events.wallHit) {
-          synth.bounce();
-        }
-        if (events.brickHit) {
-          synth.step();
-        }
-        if (events.brickDestroyed && events.destroyedBrick) {
-          synth.explosion();
-          hapticTap();
-          this.freezeFrames = 1; // 1-frame impact hit-stop
-          this.renderer.triggerShake(4, 0.18);
+      if (events.brickHit) {
+        synth.bounce();
+        hapticTap();
+      }
+      if (events.paddleHit) {
+        synth.step();
+      }
+      if (events.brickDestroyed) {
+        this.checkSaveHighScore();
+        if (events.destroyedBrick) {
           this.renderer.emitBrickShatter(events.destroyedBrick);
+          this.renderer.triggerShake(5, 0.18);
+          this.freezeFrames = 1;
 
           if (events.combo > 1) {
-            synth.combo();
-            const bx = events.destroyedBrick.x + events.destroyedBrick.width / 2;
-            const by = events.destroyedBrick.y + events.destroyedBrick.height / 2;
-            this.renderer.emitFloatingText(bx, by, `COMBO x${events.combo}!`, "#FFD700");
+            this.renderer.emitFloatingText(
+              events.destroyedBrick.x + events.destroyedBrick.width / 2,
+              events.destroyedBrick.y,
+              `COMBO x${events.combo}!`,
+              "#FFD700",
+            );
           }
         }
-        if (events.powerUpCollected) {
-          synth.powerup();
-        }
-        if (events.waveCleared) {
-          synth.star();
-        }
-        if (events.lostLife) {
-          synth.fail();
-          this.renderer.triggerShake(9, 0.35);
-        }
+      }
+      if (events.waveCleared) {
+        synth.star();
+        this.checkSaveHighScore();
+      }
+      if (events.lostLife) {
+        synth.fail();
+        this.renderer.triggerShake(9, 0.35);
       }
 
-      if (this.state.gameOver) {
+      if (this.state.gameOver && !this.gameOverHandled) {
+        this.gameOverHandled = true;
         synth.gameover();
-        if (this.saveData && this.onSave) {
-          const updated = recordHighScore(this.saveData, "breaker", this.state.score);
-          this.saveData = updated;
-          this.onSave(updated);
-        }
+        this.checkSaveHighScore();
         const go = this.container?.querySelector<HTMLElement>("#breaker-gameover");
         const stats = this.container?.querySelector<HTMLElement>("#breaker-final-stats");
         if (go) go.style.display = "flex";
@@ -342,8 +379,8 @@ export class BreakerController {
       cancelAnimationFrame(this.animId);
       this.animId = 0;
     }
-    window.removeEventListener("keydown", this.handleKeyDown);
-    window.removeEventListener("keyup", this.handleKeyUp);
+    this.abortController?.abort();
+    this.abortController = null;
     if (this.container) {
       this.container.innerHTML = "";
     }

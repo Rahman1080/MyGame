@@ -99,8 +99,17 @@
   color: inherit;
   width: 100%;
   text-align: left;
+  gap: 12px;
 }
-.continue-text { display: flex; flex-direction: column; gap: 1px; }
+.continue-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  filter: drop-shadow(0 0 10px currentColor);
+}
+.continue-icon svg { display: block; width: 28px; height: 28px; }
+.continue-text { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
 .continue-card .k { font-size: 10px; letter-spacing: 0.2em; color: var(--cyan); }
 .continue-card .lvl-big { font-family: Orbitron, sans-serif; font-size: 20px; letter-spacing: 0.1em; color: #fff; }
 .continue-card .sub { font-size: 11px; color: var(--muted); margin-top: 2px; }
@@ -850,7 +859,7 @@ button:focus-visible,
 
 .arcade-card {
   position: relative;
-  min-height: 104px;
+  min-height: 122px;
   border-radius: 18px;
   border: 1px solid var(--accent);
   background: linear-gradient(160deg, rgba(255, 255, 255, 0.06), rgba(10, 16, 28, 0.92));
@@ -862,7 +871,17 @@ button:focus-visible,
   text-align: left;
   color: inherit;
   box-shadow: 0 0 26px -14px var(--accent);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
 }
+.arcade-card-icon {
+  margin-bottom: auto;
+  padding-bottom: 8px;
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  filter: drop-shadow(0 0 8px var(--accent));
+}
+.arcade-card-icon svg { display: block; }
 .arcade-card .arcade-name {
   font-family: Orbitron, sans-serif;
   font-weight: 800;
@@ -1364,6 +1383,26 @@ button:focus-visible,
   color: var(--dim);
 }
 .glyph-shell:not(.reduce) .glyph-row.current .glyph-tile { animation: glyph-pop 0.12s ease-out; }
+
+@keyframes glyph-flip {
+  0% { transform: rotateX(0deg); }
+  48% { transform: rotateX(90deg); }
+  52% { transform: rotateX(90deg); }
+  100% { transform: rotateX(0deg); }
+}
+.glyph-shell:not(.reduce) .glyph-tile[data-flip="true"] {
+  animation: glyph-flip 0.42s cubic-bezier(0.4, 0, 0.2, 1) both;
+  animation-delay: var(--flip-delay, 0ms);
+}
+
+.glyph-emoji-grid {
+  font-size: 19px;
+  line-height: 1.35;
+  letter-spacing: 0.15em;
+  text-align: center;
+  margin: 6px 0 10px;
+  user-select: all;
+}
 
 .glyph-clues-wrap { z-index: 1; min-height: 0; }
 .glyph-clues { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
@@ -2624,16 +2663,36 @@ button:focus-visible,
   opacity: 0.5;
 }
 
-.nar-lock {
+.nar-lock-badge {
   position: absolute;
-  right: 5px;
-  bottom: 5px;
-  width: 30%;
-  height: 30%;
+  right: 3px;
+  bottom: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: rgba(14, 10, 24, 0.82);
+  padding: 1px 3px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 107, 154, 0.45);
+  pointer-events: none;
+}
+
+.nar-lock {
+  width: 11px;
+  height: 11px;
   fill: none;
   stroke: #ffd9e6;
-  stroke-width: 1.8;
-  opacity: 0.9;
+  stroke-width: 2;
+  opacity: 0.95;
+  display: block;
+}
+
+.nar-lock-num {
+  font-family: Orbitron, sans-serif;
+  font-size: 8.5px;
+  font-weight: 800;
+  color: #ffd9e6;
+  line-height: 1;
 }
 
 .nar-flyer {

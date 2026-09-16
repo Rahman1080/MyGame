@@ -474,6 +474,7 @@ export function recordDailyRun(save: BlocksSave, result: BlocksResult): BlocksSa
   const streak = dailyStreakOn({ ...save, daily }, result.date);
   return {
     ...save,
+    best: Math.max(save.best, result.score),
     runs: save.runs + 1,
     lines: save.lines + result.lines,
     bestCombo: Math.max(save.bestCombo, result.bestCombo),

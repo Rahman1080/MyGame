@@ -162,6 +162,7 @@ export interface SnakeStepResult {
   ateX?: number;
   ateY?: number;
   combo?: number;
+  won?: boolean;
 }
 
 export function tickSnake(state: SnakeGameState, dt: number): SnakeStepResult {
@@ -235,10 +236,12 @@ export function tickSnake(state: SnakeGameState, dt: number): SnakeStepResult {
     }
   }
 
+  const willEatFood = Boolean(state.food && state.food.x === nextX && state.food.y === nextY);
+
   // Tail collision
   const willHitTail = state.snake.some((seg, i) => {
-    // Exclude the very last tail segment if we aren't eating
-    if (i === state.snake.length - 1) return false;
+    // Exclude the very last tail segment ONLY if we aren't eating (since if not eating, tail vacates)
+    if (!willEatFood && i === state.snake.length - 1) return false;
     return seg.x === nextX && seg.y === nextY;
   });
 
@@ -252,11 +255,14 @@ export function tickSnake(state: SnakeGameState, dt: number): SnakeStepResult {
   state.snake.unshift(newHead);
 
   // Check food
-  if (state.food && state.food.x === nextX && state.food.y === nextY) {
+  if (willEatFood && state.food) {
     result.ateFood = true;
     result.foodType = state.food.type;
+    result.ateX = nextX;
+    result.ateY = nextY;
 
     state.combo += 1;
+    result.combo = state.combo;
     state.comboTimerMs = 3500; // 3.5s combo window
 
     let scoreMult = state.combo;
@@ -278,7 +284,12 @@ export function tickSnake(state: SnakeGameState, dt: number): SnakeStepResult {
       };
     }
 
-    state.food = spawnFood(state);
+    if (state.snake.length >= state.width * state.height) {
+      result.won = true;
+      state.food = null;
+    } else {
+      state.food = spawnFood(state);
+    }
   } else {
     state.snake.pop();
   }

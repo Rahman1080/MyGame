@@ -83,7 +83,11 @@ export function boardHtml(state: ArrowsState, view: BoardView = {}): string {
       if (view.focus === part.arrow && part.offset === 0) classes.push("focus");
       if (view.hint === part.arrow) classes.push("hint");
       const glyph = part.offset === 0 ? ARROW_TIP : "";
-      const lockMark = locked && part.offset === 0 ? LOCK_MARK : "";
+      const lockRemaining = Math.max(0, arrow.lock - state.escaped);
+      const lockMark =
+        locked && part.offset === 0
+          ? `<span class="nar-lock-badge">${LOCK_MARK}<span class="nar-lock-num">${lockRemaining}</span></span>`
+          : "";
       cells.push(
         `<button type="button" role="gridcell" tabindex="-1" class="${classes.join(" ")}" data-arrow="${
           part.arrow
@@ -125,6 +129,14 @@ export function statusText(state: ArrowsState): string {
 }
 
 export function hudHtml(state: ArrowsState): string {
+  if (state.mode === "endless") {
+    return `<div class="nar-hud" role="group" aria-label="Run stats">
+    <div class="nar-stat"><span class="k">BOARD</span><span class="v" data-hud="boards">${state.boardIndex + 1}</span></div>
+    <div class="nar-stat"><span class="k">LEFT</span><span class="v" data-hud="left">${remainingArrows(state)}</span></div>
+    <div class="nar-stat"><span class="k">READY</span><span class="v" data-hud="ready">${readyCount(state)}</span></div>
+    <div class="nar-stat"><span class="k">HINTS</span><span class="v" data-hud="hints">${state.hints}</span></div>
+  </div>`;
+  }
   return `<div class="nar-hud" role="group" aria-label="Run stats">
     <div class="nar-stat"><span class="k">LEFT</span><span class="v" data-hud="left">${remainingArrows(state)}</span></div>
     <div class="nar-stat"><span class="k">READY</span><span class="v" data-hud="ready">${readyCount(state)}</span></div>

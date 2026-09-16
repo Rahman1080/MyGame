@@ -27,6 +27,9 @@ export class WordConnectController {
   private onBack: (() => void) | null = null;
   private onSave: ((s: SaveData) => void) | null = null;
   private saveData: SaveData | null = null;
+  private arcadeSave: { best: number } | null = null;
+  private onArcadeSave: ((s: { best: number }) => void) | null = null;
+  private abortController: AbortController | null = null;
 
   constructor() {
     this.state = createWordConnectGame(1, 0);
@@ -41,15 +44,11 @@ export class WordConnectController {
   ): void {
     this.container = container;
     this.onBack = onBack;
+    this.arcadeSave = save;
+    this.onArcadeSave = onSave;
     this.state = createWordConnectGame(1, save.best ?? 0);
     this.renderDom();
     this.setupListeners();
-    this.onSave = () => {
-      if (this.state.score > save.best) {
-        save.best = this.state.score;
-        onSave({ best: save.best });
-      }
-    };
     this.startLoop();
   }
 
@@ -156,49 +155,72 @@ export class WordConnectController {
     if (hintText) hintText.textContent = `Hint (${this.state.hintsRemaining})`;
   }
 
+  private checkSaveHighScore(): void {
+    if (this.state.score > this.state.highScore) {
+      this.state.highScore = this.state.score;
+    }
+    if (this.arcadeSave && this.onArcadeSave) {
+      if (this.state.score > this.arcadeSave.best) {
+        this.arcadeSave.best = this.state.score;
+        this.onArcadeSave({ best: this.arcadeSave.best });
+      }
+    } else if (this.saveData && this.onSave) {
+      const updated = recordHighScore(this.saveData, "wordconnect", this.state.score);
+      this.saveData = updated;
+      this.onSave(updated);
+    }
+  }
+
   private setupListeners(): void {
     if (!this.container) return;
+    this.abortController?.abort();
+    this.abortController = new AbortController();
+    const { signal } = this.abortController;
 
-    this.container.addEventListener("click", (e) => {
-      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
-      if (!target) return;
+    this.container.addEventListener(
+      "click",
+      (e) => {
+        const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act]");
+        if (!target) return;
 
-      if (target.dataset.act === "back") {
-        synth.tap();
-        this.destroy();
-        this.onBack?.();
-        return;
-      }
-
-      if (target.dataset.act === "shuffle") {
-        synth.tap();
-        hapticTap();
-        shuffleWheel(this.state);
-        return;
-      }
-
-      if (target.dataset.act === "hint") {
-        synth.tap();
-        const hintRes = useHint(this.state);
-        if (hintRes) {
-          synth.powerup();
-          hapticTap();
-          this.updateHud();
-          if (this.state.isCompleted) {
-            this.handleVictory();
-          }
-        } else {
-          this.showToast("No Hints Left!");
+        if (target.dataset.act === "back") {
+          synth.tap();
+          this.destroy();
+          this.onBack?.();
+          return;
         }
-        return;
-      }
 
-      if (target.dataset.act === "next-level") {
-        synth.tap();
-        this.advanceNextLevel();
-        return;
-      }
-    });
+        if (target.dataset.act === "shuffle") {
+          synth.tap();
+          hapticTap();
+          shuffleWheel(this.state);
+          return;
+        }
+
+        if (target.dataset.act === "hint") {
+          synth.tap();
+          const hintRes = useHint(this.state);
+          if (hintRes) {
+            synth.powerup();
+            hapticTap();
+            this.updateHud();
+            if (this.state.isCompleted) {
+              this.handleVictory();
+            }
+          } else {
+            this.showToast("No Hints Left!");
+          }
+          return;
+        }
+
+        if (target.dataset.act === "next-level") {
+          synth.tap();
+          this.advanceNextLevel();
+          return;
+        }
+      },
+      { signal },
+    );
 
     if (this.canvas) {
       const getCanvasCoords = (clientX: number, clientY: number): { x: number; y: number } => {
@@ -213,39 +235,53 @@ export class WordConnectController {
         for (const n of nodes) {
           const dx = pos.x - n.x;
           const dy = pos.y - n.y;
-          if (dx * dx + dy * dy <= (n.radius * 1.3) * (n.radius * 1.3)) {
+          // 1.6x radius allows forgiving touch tracking on mobile screens
+          if (dx * dx + dy * dy <= (n.radius * 1.6) * (n.radius * 1.6)) {
             return n.index;
           }
         }
         return -1;
       };
 
-      this.canvas.addEventListener("pointerdown", (e) => {
-        const coords = getCanvasCoords(e.clientX, e.clientY);
-        const hitIdx = checkNodeCollision(coords);
-        if (hitIdx !== -1) {
-          this.isDragging = true;
-          this.cursorPos = coords;
-          addIndexToPath(this.state, hitIdx);
-          synth.step();
-          hapticTap();
-        }
-      });
-
-      this.canvas.addEventListener("pointermove", (e) => {
-        if (!this.isDragging) return;
-        const coords = getCanvasCoords(e.clientX, e.clientY);
-        this.cursorPos = coords;
-        const hitIdx = checkNodeCollision(coords);
-        if (hitIdx !== -1) {
-          const prevLen = this.state.activePath.length;
-          const added = addIndexToPath(this.state, hitIdx);
-          if (added && this.state.activePath.length !== prevLen) {
+      this.canvas.addEventListener(
+        "pointerdown",
+        (e) => {
+          try {
+            this.canvas?.setPointerCapture(e.pointerId);
+          } catch {
+            // Ignore if pointer capture fails
+          }
+          const coords = getCanvasCoords(e.clientX, e.clientY);
+          const hitIdx = checkNodeCollision(coords);
+          if (hitIdx !== -1) {
+            this.isDragging = true;
+            this.cursorPos = coords;
+            addIndexToPath(this.state, hitIdx);
             synth.step();
             hapticTap();
           }
-        }
-      });
+        },
+        { signal },
+      );
+
+      this.canvas.addEventListener(
+        "pointermove",
+        (e) => {
+          if (!this.isDragging) return;
+          const coords = getCanvasCoords(e.clientX, e.clientY);
+          this.cursorPos = coords;
+          const hitIdx = checkNodeCollision(coords);
+          if (hitIdx !== -1) {
+            const prevLen = this.state.activePath.length;
+            const added = addIndexToPath(this.state, hitIdx);
+            if (added && this.state.activePath.length !== prevLen) {
+              synth.step();
+              hapticTap();
+            }
+          }
+        },
+        { signal },
+      );
 
       const handlePointerEnd = (): void => {
         if (!this.isDragging) return;
@@ -256,6 +292,7 @@ export class WordConnectController {
         if (res.type === "target") {
           synth.combo();
           hapticTap();
+          this.checkSaveHighScore();
           this.showToast("AWESOME!");
           this.updateHud();
 
@@ -265,6 +302,7 @@ export class WordConnectController {
         } else if (res.type === "bonus") {
           synth.powerup();
           hapticTap();
+          this.checkSaveHighScore();
           this.showToast(`BONUS WORD! +${res.scoreGained}`);
           this.updateHud();
         } else if (res.type === "already") {
@@ -274,19 +312,15 @@ export class WordConnectController {
         }
       };
 
-      this.canvas.addEventListener("pointerup", handlePointerEnd);
-      this.canvas.addEventListener("pointercancel", handlePointerEnd);
+      this.canvas.addEventListener("pointerup", handlePointerEnd, { signal });
+      this.canvas.addEventListener("pointercancel", handlePointerEnd, { signal });
     }
   }
 
   private handleVictory(): void {
     synth.star();
     this.renderer.triggerVictoryBurst(340, 460);
-    if (this.saveData && this.onSave) {
-      const updated = recordHighScore(this.saveData, "wordconnect", this.state.score);
-      this.saveData = updated;
-      this.onSave(updated);
-    }
+    this.checkSaveHighScore();
     const modal = this.container?.querySelector<HTMLElement>("#wc-winmodal");
     const stats = this.container?.querySelector<HTMLElement>("#wc-final-stats");
     if (modal) modal.style.display = "flex";
@@ -295,7 +329,8 @@ export class WordConnectController {
 
   private advanceNextLevel(): void {
     const nextLvl = this.state.level + 1;
-    const currentHigh = this.saveData?.arcadeHighScores?.["wordconnect"] ?? this.state.highScore;
+    const currentHigh =
+      this.arcadeSave?.best ?? this.saveData?.arcadeHighScores?.["wordconnect"] ?? this.state.highScore;
     const carriedScore = this.state.score;
     this.state = createWordConnectGame(nextLvl, currentHigh);
     this.state.score = carriedScore;
@@ -321,7 +356,10 @@ export class WordConnectController {
       this.renderer.update(dt / 1000, this.state);
 
       if (this.ctx && this.canvas) {
-        this.renderer.render(this.ctx, this.state, 340, 460, this.cursorPos);
+        const dpr = window.devicePixelRatio || 1;
+        const w = this.canvas.width / dpr;
+        const h = this.canvas.height / dpr;
+        this.renderer.render(this.ctx, this.state, w, h, this.cursorPos);
       }
 
       this.animId = requestAnimationFrame(loop);
@@ -335,6 +373,8 @@ export class WordConnectController {
       cancelAnimationFrame(this.animId);
       this.animId = 0;
     }
+    this.abortController?.abort();
+    this.abortController = null;
     if (this.container) {
       this.container.innerHTML = "";
     }

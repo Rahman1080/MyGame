@@ -11,8 +11,8 @@ import {
   availableCount,
   boardValue,
   canUndo,
+  currentDailyStreak,
   dailyBestStars,
-  dailyStreakOn,
   emptyArrowsSave,
   finalResult,
   isDailyDone,
@@ -171,7 +171,7 @@ function buildMenuView(): MenuView {
     bestRun: current.bestRun,
     boards: current.boards,
     dailyDone: isDailyDone(current, date),
-    dailyStreak: dailyStreakOn(current, date),
+    dailyStreak: currentDailyStreak(current, date),
     dailyBest: dailyBestStars(current, date),
   };
 }
@@ -195,6 +195,11 @@ function render(): void {
     status: liveStatusHtml(statusMessage),
   };
   app.innerHTML = playShellHtml(state, modeLabel(state.mode, state), body, reduced());
+  if (screen === "play") {
+    requestAnimationFrame(() => {
+      app.querySelector<HTMLElement>(".nar-board")?.focus();
+    });
+  }
   if (screen === "over" && resultView) {
     const shell = app.querySelector<HTMLElement>(".nar-shell");
     if (shell) shell.insertAdjacentHTML("beforeend", resultCardHtml(resultView));
@@ -517,6 +522,9 @@ function moveCursor(dir: Dir): void {
   }
 }
 
+let pointerDownTime = 0;
+let pointerDownArrow = -1;
+
 function onClick(e: MouseEvent): void {
   if (!ctx) return;
   const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act],[data-level],[data-arrow]");
@@ -547,7 +555,16 @@ function onClick(e: MouseEvent): void {
     startLevel(Number(levelAttr));
     return;
   }
-  if (target.dataset.arrow !== undefined && screen === "play") doLaunch(Number(target.dataset.arrow));
+  if (target.dataset.arrow !== undefined && screen === "play") {
+    const arrowIdx = Number(target.dataset.arrow);
+    if (arrowIdx === pointerDownArrow && performance.now() - pointerDownTime > 260) {
+      clearPress();
+      pointerDownArrow = -1;
+      return;
+    }
+    pointerDownArrow = -1;
+    doLaunch(arrowIdx);
+  }
 }
 
 function clearPress(): void {
@@ -563,6 +580,8 @@ function onPointerDown(e: PointerEvent): void {
   const target = (e.target as HTMLElement).closest<HTMLElement>("[data-arrow]");
   if (!target) return;
   const index = Number(target.dataset.arrow);
+  pointerDownTime = performance.now();
+  pointerDownArrow = index;
   const preview = laneCells(state, index);
   const wrap = app.querySelector<HTMLElement>(".nar-board-wrap");
   if (!wrap) return;

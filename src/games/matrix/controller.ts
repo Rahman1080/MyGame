@@ -24,6 +24,9 @@ export class MatrixController {
   private onBack: (() => void) | null = null;
   private onSave: ((s: SaveData) => void) | null = null;
   private saveData: SaveData | null = null;
+  private arcadeSave: { best: number } | null = null;
+  private onArcadeSave: ((s: { best: number }) => void) | null = null;
+  private abortController: AbortController | null = null;
 
   constructor() {
     this.state = createMatrixGame(4, 0);
@@ -38,15 +41,11 @@ export class MatrixController {
   ): void {
     this.container = container;
     this.onBack = onBack;
+    this.arcadeSave = save;
+    this.onArcadeSave = onSave;
     this.state = createMatrixGame(4, save.best ?? 0);
     this.renderDom();
     this.setupListeners();
-    this.onSave = () => {
-      if (this.state.score > save.best) {
-        save.best = this.state.score;
-        onSave({ best: save.best });
-      }
-    };
     this.startLoop();
   }
 
@@ -130,39 +129,74 @@ export class MatrixController {
     }
   }
 
+  private checkSaveHighScore(): void {
+    if (this.state.score > this.state.highScore) {
+      this.state.highScore = this.state.score;
+    }
+    if (this.arcadeSave && this.onArcadeSave) {
+      if (this.state.score > this.arcadeSave.best) {
+        this.arcadeSave.best = this.state.score;
+        this.onArcadeSave({ best: this.arcadeSave.best });
+      }
+    } else if (this.saveData && this.onSave) {
+      const updated = recordHighScore(this.saveData, "matrix", this.state.score);
+      this.saveData = updated;
+      this.onSave(updated);
+    }
+  }
+
+  private undo(): void {
+    if (undoMatrix(this.state)) {
+      synth.step();
+      const go = this.container?.querySelector<HTMLElement>("#matrix-gameover");
+      if (go) go.style.display = "none";
+      this.updateHud();
+    }
+  }
+
   private setupListeners(): void {
     if (!this.container) return;
+    this.abortController?.abort();
+    this.abortController = new AbortController();
+    const { signal } = this.abortController;
 
-    this.container.addEventListener("click", (e) => {
-      const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act], [data-dir]");
-      if (!target) return;
+    this.container.addEventListener(
+      "click",
+      (e) => {
+        const target = (e.target as HTMLElement).closest<HTMLElement>("[data-act], [data-dir]");
+        if (!target) return;
 
-      if (target.dataset.act === "back") {
-        synth.tap();
-        this.destroy();
-        this.onBack?.();
-        return;
-      }
-
-      if (target.dataset.act === "undo") {
-        synth.tap();
-        if (undoMatrix(this.state)) {
-          this.updateHud();
+        if (target.dataset.act === "back") {
+          synth.tap();
+          this.destroy();
+          this.onBack?.();
+          return;
         }
-        return;
-      }
 
-      if (target.dataset.act === "restart") {
-        synth.tap();
-        this.restart();
-        return;
-      }
+        if (target.dataset.act === "undo") {
+          this.undo();
+          return;
+        }
 
-      const dir = target.dataset.dir as MatrixDirection | undefined;
-      if (dir) {
-        this.handleMove(dir);
-      }
-    });
+        if (target.dataset.act === "restart") {
+          synth.tap();
+          const go = this.container?.querySelector<HTMLElement>("#matrix-gameover");
+          if (this.state.won && !this.state.gameOver && go && go.style.display !== "none") {
+            // Keep playing beyond 2048!
+            go.style.display = "none";
+            return;
+          }
+          this.restart();
+          return;
+        }
+
+        const dir = target.dataset.dir as MatrixDirection | undefined;
+        if (dir) {
+          this.handleMove(dir);
+        }
+      },
+      { signal },
+    );
 
     // Touch swipe handling
     if (this.canvas) {
@@ -174,7 +208,7 @@ export class MatrixController {
           this.touchStartX = touch.clientX;
           this.touchStartY = touch.clientY;
         },
-        { passive: true },
+        { passive: true, signal },
       );
 
       this.canvas.addEventListener(
@@ -195,12 +229,12 @@ export class MatrixController {
             }
           }
         },
-        { passive: true },
+        { passive: true, signal },
       );
     }
 
     // Keyboard
-    window.addEventListener("keydown", this.handleKeyDown);
+    window.addEventListener("keydown", this.handleKeyDown, { signal });
   }
 
   private handleKeyDown = (e: KeyboardEvent): void => {
@@ -218,18 +252,17 @@ export class MatrixController {
       this.handleMove("right");
     } else if (e.key === "u" || e.key === "U" || e.key === "z" || e.key === "Z") {
       e.preventDefault();
-      synth.tap();
-      if (undoMatrix(this.state)) this.updateHud();
+      this.undo();
     }
   };
 
   private handleMove(dir: MatrixDirection): void {
-    const prevGrid = this.state.grid.map((row) => [...row]);
     const res = moveMatrix(this.state, dir);
 
     if (res.moved) {
       synth.step();
       hapticTap();
+      this.checkSaveHighScore();
 
       // Check merged tiles and trigger animations
       if (this.canvas) {
@@ -243,16 +276,11 @@ export class MatrixController {
         const startX = (w - size) / 2;
         const startY = (h - size) / 2;
 
-        for (let r = 0; r < this.state.size; r++) {
-          for (let c = 0; c < this.state.size; c++) {
-            const currentVal = this.state.grid[r]?.[c];
-            const prevVal = prevGrid[r]?.[c];
-            // If the tile grew in value, it's a merge
-            if (currentVal && prevVal && currentVal > prevVal) {
-              const cx = startX + gap + c * (cellSize + gap) + cellSize / 2;
-              const cy = startY + gap + r * (cellSize + gap) + cellSize / 2;
-              this.renderer.triggerMerge(r, c, currentVal, cx, cy);
-            }
+        if (res.mergedTiles && res.mergedTiles.length > 0) {
+          for (const m of res.mergedTiles) {
+            const cx = startX + gap + m.c * (cellSize + gap) + cellSize / 2;
+            const cy = startY + gap + m.r * (cellSize + gap) + cellSize / 2;
+            this.renderer.triggerMerge(m.r, m.c, m.value, cx, cy);
           }
         }
 
@@ -269,21 +297,27 @@ export class MatrixController {
       if (res.reached2048) {
         synth.star();
         this.renderer.triggerShake(10, 0.4);
+        const go = this.container?.querySelector<HTMLElement>("#matrix-gameover");
+        const stats = this.container?.querySelector<HTMLElement>("#matrix-final-stats");
+        const title = this.container?.querySelector<HTMLElement>("#matrix-modal-title");
+        const playBtn = this.container?.querySelector<HTMLElement>("[data-act='restart']");
+        if (go) go.style.display = "flex";
+        if (title) title.textContent = "VICTORY (2048)!";
+        if (stats) stats.textContent = `SCORE: ${this.state.score} · BEST: ${this.state.highScore}`;
+        if (playBtn) playBtn.textContent = "Keep Playing";
       }
 
       if (res.isGameOver) {
         synth.gameover();
-        if (this.saveData && this.onSave) {
-          const updated = recordHighScore(this.saveData, "matrix", this.state.score);
-          this.saveData = updated;
-          this.onSave(updated);
-        }
+        this.checkSaveHighScore();
         const go = this.container?.querySelector<HTMLElement>("#matrix-gameover");
         const stats = this.container?.querySelector<HTMLElement>("#matrix-final-stats");
         const title = this.container?.querySelector<HTMLElement>("#matrix-modal-title");
+        const playBtn = this.container?.querySelector<HTMLElement>("[data-act='restart']");
         if (go) go.style.display = "flex";
-        if (title) title.textContent = this.state.won ? "VICTORY (2048)!" : "GAME OVER";
+        if (title) title.textContent = this.state.won ? "VICTORY!" : "GAME OVER";
         if (stats) stats.textContent = `SCORE: ${this.state.score} · BEST: ${this.state.highScore}`;
+        if (playBtn) playBtn.textContent = "Play Again";
       }
 
       this.updateHud();
@@ -291,7 +325,8 @@ export class MatrixController {
   }
 
   private restart(): void {
-    const currentHigh = this.saveData?.arcadeHighScores?.["matrix"] ?? this.state.highScore;
+    const currentHigh =
+      this.arcadeSave?.best ?? this.saveData?.arcadeHighScores?.["matrix"] ?? this.state.highScore;
     this.state = createMatrixGame(4, currentHigh);
     const go = this.container?.querySelector<HTMLElement>("#matrix-gameover");
     if (go) go.style.display = "none";
@@ -336,7 +371,8 @@ export class MatrixController {
       cancelAnimationFrame(this.animId);
       this.animId = 0;
     }
-    window.removeEventListener("keydown", this.handleKeyDown);
+    this.abortController?.abort();
+    this.abortController = null;
     if (this.container) {
       this.container.innerHTML = "";
     }

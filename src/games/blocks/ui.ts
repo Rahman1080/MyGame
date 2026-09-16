@@ -450,10 +450,11 @@ function startGhost(drag: DragState): void {
   drag.ghost = ghost;
 }
 
-function moveGhost(drag: DragState, x: number, y: number): void {
+function moveGhost(drag: DragState, x: number, y: number, isTouch = false): void {
   if (!drag.ghost) return;
+  const offsetY = isTouch ? 54 : 0;
   drag.ghost.style.left = `${x}px`;
-  drag.ghost.style.top = `${y}px`;
+  drag.ghost.style.top = `${y - offsetY}px`;
 }
 
 function onPointerDown(e: PointerEvent): void {
@@ -496,7 +497,8 @@ function onPointerDown(e: PointerEvent): void {
 
 function updateDragTarget(e: PointerEvent): void {
   if (!state || !dragging) return;
-  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const offsetY = e.pointerType === "touch" ? 54 : 0;
+  const el = document.elementFromPoint(e.clientX, e.clientY - offsetY);
   const cell = el?.closest<HTMLElement>("[data-cell]");
   if (!cell) {
     dragging.anchorRow = null;
@@ -517,7 +519,7 @@ function onPointerMove(e: PointerEvent): void {
       selected = dragging.piece;
       startGhost(dragging);
     }
-    moveGhost(dragging, e.clientX, e.clientY);
+    moveGhost(dragging, e.clientX, e.clientY, e.pointerType === "touch");
     updateDragTarget(e);
     refreshPlay({ tray: false, hud: false });
     return;

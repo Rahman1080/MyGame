@@ -81,9 +81,9 @@ export class WordConnectRenderer {
     height: number,
   ): Array<{ index: number; letter: string; x: number; y: number; radius: number }> {
     const cx = width / 2;
-    const cy = height - 98;
-    const wheelRadius = Math.min(width * 0.28, 76);
-    const nodeRadius = 22;
+    const cy = height - 90;
+    const wheelRadius = Math.min(width * 0.26, 70);
+    const nodeRadius = 21;
     const count = state.letters.length;
 
     const nodes = [];
@@ -242,7 +242,12 @@ export class WordConnectRenderer {
     if (state.currentWord.length === 0) return;
 
     const cx = width / 2;
-    const cy = height - 200;
+    const slotsCount = state.slots.length;
+    const slotsBottom = Math.max(90, slotsCount * 33 + 22);
+    const wheelRadius = Math.min(width * 0.26, 70);
+    const wheelCenterY = height - 90;
+    const wheelTop = wheelCenterY - wheelRadius - 24;
+    const cy = Math.floor((slotsBottom + wheelTop) / 2);
 
     ctx.save();
     ctx.font = 'bold 18px "JetBrains Mono", monospace';
@@ -280,8 +285,8 @@ export class WordConnectRenderer {
     cursorPos: { x: number; y: number } | null,
   ): void {
     const cx = width / 2;
-    const cy = height - 98;
-    const wheelRadius = Math.min(width * 0.28, 76);
+    const cy = height - 90;
+    const wheelRadius = Math.min(width * 0.26, 70);
     const nodes = this.getWheelNodePositions(state, width, height);
 
     // 1. Wheel outer glow halo

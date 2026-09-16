@@ -316,6 +316,9 @@ export const EXTRA_VALID: readonly string[] = [
   "waste", "water", "weary", "weave", "wedge", "weigh", "weird", "where", "which", "while",
   "whole", "whose", "widow", "width", "witch", "world", "worse", "worst", "worth", "would",
   "wrong", "wrote", "yacht", "young", "youth", "zones", "bobby", "eerie", "kebab",
+  "adieu", "audio", "slate", "crate", "roate", "salet", "soare", "alien", "gamer", "chill",
+  "blaze", "glory", "swift", "smart", "forge", "anvil", "flock", "swarm", "trees", "roots",
+  "seeds", "salty", "spicy", "tasty", "steak", "sauce", "snack", "ghost", "lance",
 ];
 
 export const VALID_WORDS: readonly string[] = Array.from(

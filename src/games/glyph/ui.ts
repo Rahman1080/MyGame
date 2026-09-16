@@ -56,6 +56,7 @@ interface ResultView {
   modifier: string;
   ranked: boolean;
   share: string;
+  emojiGrid?: string;
   mode: GlyphMode;
   level: number;
   hints: number;
@@ -165,6 +166,10 @@ function viewFromState(current: GlyphState, final: ReturnType<typeof finalResult
     isLevel && final.won && current.level < GLYPH_LEVELS && isLevelUnlocked(ctx?.save ?? emptySave(), current.level + 1)
       ? current.level + 1
       : null;
+  const EMOJI_MAP: Record<string, string> = { correct: "🟩", present: "🟨", absent: "⬛" };
+  const emojiGrid = current.guesses
+    .map((g) => g.marks.map((m) => EMOJI_MAP[m] ?? "⬛").join(""))
+    .join("<br>");
   return {
     won: final.won,
     guesses: final.guesses,
@@ -173,6 +178,7 @@ function viewFromState(current: GlyphState, final: ReturnType<typeof finalResult
     modifier: final.modifier,
     ranked: current.mode === "daily" && ranked,
     share: isLevel ? buildLevelShare(final) : buildShare(current, ctx?.save.streak ?? 0),
+    emojiGrid,
     mode: current.mode,
     level: current.level,
     hints: final.hints,
@@ -246,6 +252,7 @@ function resultCardHtml(view: ResultView): string {
       ${badge}
       <div class="stars" aria-label="${view.stars} of 3 stars">${starsText(view)}</div>
       <div class="win-meta">${meta}</div>
+      ${view.emojiGrid ? `<div class="glyph-emoji-grid" aria-hidden="true">${view.emojiGrid}</div>` : ""}
       ${reveal}
       <div class="win-actions">
         ${nextBtn}
@@ -521,7 +528,15 @@ function goSelect(): void {
 }
 
 function startPractice(): void {
-  startDailyPlay();
+  if (!ctx) return;
+  const practiceSeed = `${date}:practice:${Date.now()}`;
+  state = startDaily(practiceSeed);
+  ranked = false;
+  draft = "";
+  result = null;
+  screen = "play";
+  render();
+  beginTimer();
 }
 
 function onClick(e: MouseEvent): void {

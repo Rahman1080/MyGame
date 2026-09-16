@@ -151,14 +151,14 @@ export function generateWordGrid(
   const eligible = wordPool.filter(
     (w) => w.length >= minWordLen && w.length <= size,
   );
-  // Sort longer words first for harder grids to ensure they get placed
-  const sorted = [...eligible].sort((a, b) => b.length - a.length);
-  // Take a randomized slice of candidate words
-  const pool = [...sorted].sort(() => rng() - 0.5);
-  const wordsToPlace = pool.slice(0, maxWords);
+  // Shuffle candidate pool first, then sort longer words first for easier placement
+  const candidates = [...eligible]
+    .sort(() => rng() - 0.5)
+    .sort((a, b) => b.length - a.length);
 
   let colorIdx = 0;
-  for (const word of wordsToPlace) {
+  for (const word of candidates) {
+    if (placedWords.length >= maxWords) break;
     let placed = false;
     // Try multiple random attempts to place word
     const attempts = 100;

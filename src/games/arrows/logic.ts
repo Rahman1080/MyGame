@@ -433,6 +433,11 @@ export function dailyStreakOn(save: ArrowsSave, date: string, limit = 400): numb
   return streak;
 }
 
+export function currentDailyStreak(save: ArrowsSave, today: string, limit = 400): number {
+  if (isDailyDone(save, today)) return dailyStreakOn(save, today, limit);
+  return dailyStreakOn(save, previousYmd(today), limit);
+}
+
 export function recordLevelRun(save: ArrowsSave, result: ArrowsResult): ArrowsSave {
   if (result.mode !== "level" || !result.solved) return save;
   const key = levelKey(result.level);
