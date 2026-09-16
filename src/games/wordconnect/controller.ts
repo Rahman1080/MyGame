@@ -12,6 +12,7 @@ import {
   type WordConnectState,
 } from "./engine";
 import { WordConnectRenderer } from "./render";
+import { hitTestWheelNode } from "./layout";
 
 export class WordConnectController {
   private state: WordConnectState;
@@ -30,6 +31,7 @@ export class WordConnectController {
   private arcadeSave: BasicScoreSave | null = null;
   private onArcadeSave: ((s: BasicScoreSave) => void) | null = null;
   private abortController: AbortController | null = null;
+  private resizeObserver: ResizeObserver | null = null;
 
   constructor() {
     this.state = createWordConnectGame(1, 0);
@@ -95,7 +97,7 @@ export class WordConnectController {
           <div class="center-meta">
             <div class="lvl">WORD CONNECT · LVL ${this.state.level}</div>
             <div class="par">SCORE <b id="wc-score">${this.state.score}</b> · HIGH <b id="wc-high">${this.state.highScore}</b></div>
-            <div class="par-sub" id="wc-bonus-info" style="color: #FF9900; font-weight: 700;">CONNECT LETTERS TO SPELL</div>
+            <div class="par-sub" id="wc-progress" style="color: #FF9900; font-weight: 700;">SOLVED 0/${this.state.slots.length}</div>
           </div>
           <button class="icon-btn sm" data-act="reset-lvl" title="Restart Level" style="color: #64748b; font-size: 11px;">
             <span>Restart</span>
@@ -145,16 +147,33 @@ export class WordConnectController {
   private resizeCanvas(): void {
     if (!this.canvas || !this.ctx) return;
     const dpr = window.devicePixelRatio || 1;
-    const wrap = this.canvas.parentElement;
-    const w = wrap ? Math.min(430, wrap.clientWidth || window.innerWidth) : Math.min(430, window.innerWidth);
-    const h = wrap ? (wrap.clientHeight || 560) : 560;
 
-    this.canvas.width = w * dpr;
-    this.canvas.height = h * dpr;
-    this.canvas.style.width = `${w}px`;
-    this.canvas.style.height = `${h}px`;
+    // Keep the element fluid and let the stylesheet lay it out. The backing
+    // buffer is then matched to the *rendered* box; if CSS scales a differently
+    // sized buffer, pointer coordinates and drawn positions disagree and drags
+    // never connect to the wheel nodes.
+    this.canvas.style.width = "100%";
+    this.canvas.style.height = "100%";
+    const rect = this.canvas.getBoundingClientRect();
+    const w = Math.max(1, Math.round(rect.width || window.innerWidth));
+    const h = Math.max(1, Math.round(rect.height || 560));
+
+    const bufferW = Math.round(w * dpr);
+    const bufferH = Math.round(h * dpr);
+    if (this.canvas.width !== bufferW) this.canvas.width = bufferW;
+    if (this.canvas.height !== bufferH) this.canvas.height = bufferH;
+
     this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(dpr, dpr);
+  }
+
+  private canvasSize(): { w: number; h: number } {
+    const c = this.canvas;
+    if (!c) return { w: 0, h: 0 };
+    return {
+      w: c.clientWidth || c.width,
+      h: c.clientHeight || c.height,
+    };
   }
 
   private showToast(msg: string): void {
@@ -170,9 +189,17 @@ export class WordConnectController {
     const scoreEl = this.container?.querySelector("#wc-score");
     const highEl = this.container?.querySelector("#wc-high");
     const hintBadge = this.container?.querySelector("#wc-hint-badge");
+    const progressEl = this.container?.querySelector("#wc-progress");
     if (scoreEl) scoreEl.textContent = this.state.score.toString();
     if (highEl) highEl.textContent = this.state.highScore.toString();
     if (hintBadge) hintBadge.textContent = this.state.hintsRemaining.toString();
+    if (progressEl) {
+      const solved = this.state.slots.filter((s) => s.solved).length;
+      const bonus = this.state.foundBonusWords.length;
+      progressEl.textContent =
+        `SOLVED ${solved}/${this.state.slots.length}` +
+        (bonus > 0 ? ` · BONUS ${bonus}` : "");
+    }
   }
 
   private checkSaveHighScore(): void {
@@ -236,7 +263,7 @@ export class WordConnectController {
 
         if (target.dataset.act === "reset-lvl") {
           synth.tap();
-          this.state = createWordConnectGame(1, this.state.highScore);
+          this.state = createWordConnectGame(this.state.level, this.state.highScore);
           this.checkSaveHighScore();
           this.renderDom();
           this.setupListeners();
@@ -262,19 +289,10 @@ export class WordConnectController {
       };
 
       const checkNodeCollision = (pos: { x: number; y: number }): number => {
-        const dpr = window.devicePixelRatio || 1;
-        const w = this.canvas!.width / dpr;
-        const h = this.canvas!.height / dpr;
+        const { w, h } = this.canvasSize();
         const nodes = this.renderer.getWheelNodePositions(this.state, w, h);
-        for (const n of nodes) {
-          const dx = pos.x - n.x;
-          const dy = pos.y - n.y;
-          // 1.55x radius gives effortless touch tracking on mobile screens
-          if (dx * dx + dy * dy <= (n.radius * 1.55) * (n.radius * 1.55)) {
-            return n.index;
-          }
-        }
-        return -1;
+        // 1.55x radius gives effortless touch tracking on mobile screens
+        return hitTestWheelNode(pos.x, pos.y, nodes);
       };
 
       this.canvas.addEventListener(
@@ -348,14 +366,18 @@ export class WordConnectController {
       this.canvas.addEventListener("pointercancel", handlePointerEnd, { signal });
     }
 
+    if (this.canvas?.parentElement && typeof ResizeObserver !== "undefined") {
+      this.resizeObserver?.disconnect();
+      this.resizeObserver = new ResizeObserver(() => this.resizeCanvas());
+      this.resizeObserver.observe(this.canvas.parentElement);
+    }
+
     window.addEventListener("resize", () => this.resizeCanvas(), { signal });
   }
 
   private handleVictory(): void {
     synth.star();
-    const dpr = window.devicePixelRatio || 1;
-    const w = (this.canvas?.width || 360) / dpr;
-    const h = (this.canvas?.height || 560) / dpr;
+    const { w, h } = this.canvasSize();
     this.renderer.triggerVictoryBurst(w, h);
     this.checkSaveHighScore();
     const modal = this.container?.querySelector<HTMLElement>("#wc-winmodal");
@@ -398,9 +420,7 @@ export class WordConnectController {
       this.renderer.update(dt / 1000, this.state);
 
       if (this.ctx && this.canvas) {
-        const dpr = window.devicePixelRatio || 1;
-        const w = this.canvas.width / dpr;
-        const h = this.canvas.height / dpr;
+        const { w, h } = this.canvasSize();
         this.renderer.render(this.ctx, this.state, w, h, this.cursorPos);
       }
 
@@ -417,6 +437,8 @@ export class WordConnectController {
     }
     this.abortController?.abort();
     this.abortController = null;
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
     if (this.container) {
       this.container.innerHTML = "";
     }

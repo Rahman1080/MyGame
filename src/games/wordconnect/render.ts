@@ -1,4 +1,9 @@
 import type { WordConnectState } from "./engine";
+import {
+  wheelGeometry,
+  wheelNodePositions,
+  type WheelNode,
+} from "./layout";
 
 export interface WordConnectParticle {
   x: number;
@@ -78,30 +83,8 @@ export class WordConnectRenderer {
     state: WordConnectState,
     width: number,
     height: number,
-  ): Array<{ index: number; letter: string; x: number; y: number; radius: number }> {
-    const cx = width / 2;
-    const wheelCenterY = height - Math.min(height * 0.27, 132);
-    const wheelRadius = Math.min(width * 0.33, height * 0.19, 96);
-    const count = state.letters.length;
-    const nodeRadius = Math.max(20, Math.min(26, Math.floor(wheelRadius * 0.3)));
-
-    const nodes = [];
-    for (let i = 0; i < count; i++) {
-      const angle =
-        -Math.PI / 2 +
-        (2 * Math.PI * i) / count +
-        this.currentShuffleAngle;
-      const x = cx + Math.cos(angle) * wheelRadius;
-      const y = wheelCenterY + Math.sin(angle) * wheelRadius;
-      nodes.push({
-        index: i,
-        letter: state.letters[i]!,
-        x,
-        y,
-        radius: nodeRadius,
-      });
-    }
-    return nodes;
+  ): WheelNode[] {
+    return wheelNodePositions(state, width, height, this.currentShuffleAngle);
   }
 
   render(
@@ -135,13 +118,16 @@ export class WordConnectRenderer {
     // 1. RENDER TOP WORD SLOTS (Spacious, fluid crossword layout)
     this.renderWordSlots(ctx, state, width, height);
 
-    // 2. RENDER FLOATING CURRENT WORD PREVIEW BUBBLE
+    // 2. BONUS WORD CHIPS / PROMPT (fills the mid-board space)
+    this.renderBonusWords(ctx, state, width, height);
+
+    // 3. RENDER FLOATING CURRENT WORD PREVIEW BUBBLE
     this.renderFloatingPreview(ctx, state, width, height);
 
-    // 3. RENDER LETTER WHEEL & TRACE LASER
+    // 4. RENDER LETTER WHEEL & TRACE LASER
     this.renderWheel(ctx, state, width, height, cursorPos);
 
-    // 4. PARTICLES
+    // 5. PARTICLES
     for (const p of this.particles) {
       const alpha = Math.max(0, 1 - p.life / p.maxLife);
       ctx.save();
@@ -158,31 +144,71 @@ export class WordConnectRenderer {
     ctx.restore();
   }
 
-  private renderWordSlots(
-    ctx: CanvasRenderingContext2D,
-    state: WordConnectState,
+  private slotsLayout(
     width: number,
-    height: number,
-  ): void {
-    const slots = state.slots;
-    const count = slots.length;
-    if (count === 0) return;
-
-    // Determine max word length to scale boxes gracefully
+    slots: WordConnectState["slots"],
+  ): {
+    count: number;
+    maxLen: number;
+    gap: number;
+    rowGap: number;
+    boxSize: number;
+    startY: number;
+    totalH: number;
+    bottomY: number;
+  } {
+    const count = Math.max(1, slots.length);
     let maxLen = 3;
     for (const s of slots) {
       if (s.word.length > maxLen) maxLen = s.word.length;
     }
+    const gap = 8;
+    const rowGap = count > 3 ? 10 : 14;
+    const boxSize = Math.max(
+      28,
+      Math.min(52, Math.floor((width - 36 - (maxLen - 1) * gap) / maxLen)),
+    );
+    const totalH = count * boxSize + (count - 1) * rowGap;
+    const startY = 18;
+    return {
+      count,
+      maxLen,
+      gap,
+      rowGap,
+      boxSize,
+      startY,
+      totalH,
+      bottomY: startY + totalH,
+    };
+  }
 
-    const availableH = height * 0.44;
-    const startY = 16;
-    const gap = 6;
-    const rowGap = Math.max(6, Math.min(10, Math.floor((availableH - count * 32) / (count + 1))));
-    const boxSize = Math.max(26, Math.min(36, Math.floor((width - 40 - (maxLen - 1) * gap) / maxLen)));
+  private renderWordSlots(
+    ctx: CanvasRenderingContext2D,
+    state: WordConnectState,
+    width: number,
+    _height: number,
+  ): void {
+    const slots = state.slots;
+    if (slots.length === 0) return;
+
+    const { gap, rowGap, boxSize, startY, bottomY } = this.slotsLayout(
+      width,
+      slots,
+    );
+
+    // Soft glass panel behind the answer rows
+    ctx.save();
+    ctx.fillStyle = "rgba(13, 18, 32, 0.72)";
+    ctx.strokeStyle = "rgba(255, 153, 0, 0.22)";
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.roundRect(10, 8, width - 20, bottomY - 8 + 12, 16);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
 
     let curY = startY;
-    for (let s = 0; s < count; s++) {
-      const slot = slots[s]!;
+    for (const slot of slots) {
       const wordLen = slot.word.length;
       const totalRowW = wordLen * boxSize + (wordLen - 1) * gap;
       const rowStartX = (width - totalRowW) / 2;
@@ -196,17 +222,16 @@ export class WordConnectRenderer {
         ctx.save();
         if (slot.solved) {
           // Solved word: vibrant neon amber/gold
-          ctx.fillStyle = "rgba(255, 153, 0, 0.22)";
+          ctx.fillStyle = "rgba(255, 153, 0, 0.24)";
           ctx.strokeStyle = "#FF9900";
           ctx.shadowColor = "#FF9900";
-          ctx.shadowBlur = 12;
+          ctx.shadowBlur = 14;
           ctx.lineWidth = 2;
           ctx.beginPath();
-          ctx.roundRect(bx, by, boxSize, boxSize, 7);
+          ctx.roundRect(bx, by, boxSize, boxSize, 9);
           ctx.fill();
           ctx.stroke();
 
-          // Letter text
           ctx.fillStyle = "#FFFFFF";
           ctx.shadowColor = "#FFD700";
           ctx.shadowBlur = 6;
@@ -222,7 +247,7 @@ export class WordConnectRenderer {
           ctx.shadowBlur = 10;
           ctx.lineWidth = 1.8;
           ctx.beginPath();
-          ctx.roundRect(bx, by, boxSize, boxSize, 7);
+          ctx.roundRect(bx, by, boxSize, boxSize, 9);
           ctx.fill();
           ctx.stroke();
 
@@ -239,13 +264,119 @@ export class WordConnectRenderer {
           ctx.strokeStyle = "rgba(255, 153, 0, 0.35)";
           ctx.lineWidth = 1.4;
           ctx.beginPath();
-          ctx.roundRect(bx, by, boxSize, boxSize, 7);
+          ctx.roundRect(bx, by, boxSize, boxSize, 9);
           ctx.fill();
           ctx.stroke();
         }
         ctx.restore();
       }
       curY += boxSize + rowGap;
+    }
+  }
+
+  /**
+   * Fills the middle of the board with found bonus words, or an informative
+   * prompt so the composition never reads as empty dead space.
+   */
+  private renderBonusWords(
+    ctx: CanvasRenderingContext2D,
+    state: WordConnectState,
+    width: number,
+    height: number,
+  ): void {
+    const { bottomY } = this.slotsLayout(width, state.slots);
+    const { cy: wheelCenterY, radius: wheelRadius } = wheelGeometry(
+      width,
+      height,
+    );
+    const previewY = wheelCenterY - wheelRadius - 34;
+    const regionTop = bottomY + 24;
+    const regionBottom = previewY - 26;
+    if (regionBottom <= regionTop) return;
+
+    const found = state.foundBonusWords;
+    const centerY = (regionTop + regionBottom) / 2;
+
+    if (found.length === 0) {
+      ctx.save();
+      ctx.fillStyle = "rgba(255, 153, 0, 0.55)";
+      ctx.font = "700 11px Orbitron, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("SWIPE ACROSS LETTERS TO SPELL", width / 2, centerY - 8);
+      if (state.bonusWords.length > 0) {
+        ctx.fillStyle = "rgba(255, 215, 64, 0.42)";
+        ctx.fillText(
+          `${state.bonusWords.length} BONUS WORDS HIDDEN`,
+          width / 2,
+          centerY + 12,
+        );
+      }
+      ctx.restore();
+      return;
+    }
+
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 215, 64, 0.6)";
+    ctx.font = "700 10px Orbitron, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      `BONUS WORDS ${found.length}/${state.bonusWords.length}`,
+      width / 2,
+      regionTop,
+    );
+    ctx.restore();
+
+    const chipH = 26;
+    const chipGap = 8;
+    const maxW = width - 32;
+    ctx.font = "700 11px Orbitron, sans-serif";
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let rowW = 0;
+    for (const word of found) {
+      const w = ctx.measureText(word).width + 22;
+      const extra = row.length === 0 ? w : rowW + chipGap + w;
+      if (extra > maxW && row.length > 0) {
+        rows.push(row);
+        row = [word];
+        rowW = w;
+      } else {
+        row.push(word);
+        rowW = extra;
+      }
+    }
+    if (row.length > 0) rows.push(row);
+
+    const totalH = rows.length * chipH + (rows.length - 1) * chipGap;
+    let y = centerY - totalH / 2 + chipH / 2;
+    for (const r of rows) {
+      let total = 0;
+      for (const word of r) total += ctx.measureText(word).width + 22;
+      total += (r.length - 1) * chipGap;
+      let x = (width - total) / 2;
+      for (const word of r) {
+        const cw = ctx.measureText(word).width + 22;
+        ctx.save();
+        ctx.fillStyle = "rgba(255, 215, 64, 0.1)";
+        ctx.strokeStyle = "rgba(255, 215, 64, 0.6)";
+        ctx.lineWidth = 1.3;
+        ctx.shadowColor = "rgba(255, 215, 64, 0.5)";
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.roundRect(x, y - chipH / 2, cw, chipH, chipH / 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "#FFE082";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(word, x + cw / 2, y + 1);
+        ctx.restore();
+        x += cw + chipGap;
+      }
+      y += chipH + chipGap;
     }
   }
 
@@ -258,9 +389,8 @@ export class WordConnectRenderer {
     if (state.currentWord.length === 0) return;
 
     const cx = width / 2;
-    const wheelCenterY = height - Math.min(height * 0.27, 132);
-    const wheelRadius = Math.min(width * 0.33, height * 0.19, 96);
-    const cy = wheelCenterY - wheelRadius - 32;
+    const { cy: wheelCenterY, radius: wheelRadius } = wheelGeometry(width, height);
+    const cy = wheelCenterY - wheelRadius - 34;
 
     ctx.save();
     ctx.font = 'bold 20px Orbitron, sans-serif';
@@ -298,8 +428,10 @@ export class WordConnectRenderer {
     cursorPos: { x: number; y: number } | null,
   ): void {
     const cx = width / 2;
-    const wheelCenterY = height - Math.min(height * 0.27, 132);
-    const wheelRadius = Math.min(width * 0.33, height * 0.19, 96);
+    const {
+      cy: wheelCenterY,
+      radius: wheelRadius,
+    } = wheelGeometry(width, height);
     const nodes = this.getWheelNodePositions(state, width, height);
 
     // 1. Wheel outer glow disc background
