@@ -1,5 +1,5 @@
 import type { ArrowsMode, ArrowsState } from "./logic";
-import { bodyCells, dirName, isLocked, movableIndices, occupiedAt, stepCell } from "./logic";
+import { availableIndices, dirName, isLocked, laneInfo } from "./logic";
 
 const ICON_BACK = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M15 5l-7 7 7 7" /></svg>`;
 const ICON_RESTART = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M20 11a8 8 0 1 0-2.4 5.7" /><path d="M20 5v6h-6" /></svg>`;
@@ -11,56 +11,53 @@ const LOCK_MARK = `<svg class="nar-lock" viewBox="0 0 24 24" aria-hidden="true" 
 export interface BoardView {
   focus?: number | null;
   hint?: number | null;
-  /** Arrow currently being pressed, for lane preview. */
   press?: number | null;
 }
 
 export interface LanePreview {
   cells: number[];
   blocked: boolean;
+  blocker: number;
 }
 
-/** Cells in front of an arrow until the edge or the first obstruction. */
 export function laneCells(state: ArrowsState, index: number): LanePreview {
-  const arrow = state.arrows[index];
-  if (!arrow || (state.bodies[index] ?? 0) <= 0) return { cells: [], blocked: false };
-  const occupied = occupiedAt(state.size, state.arrows, state.heads, state.bodies, index);
-  const cells: number[] = [];
-  let cell = state.heads[index]!;
-  for (;;) {
-    const next = stepCell(state.size, cell, arrow.dir);
-    if (next < 0) return { cells, blocked: false };
-    cells.push(next);
-    if (occupied.has(next)) return { cells, blocked: true };
-    cell = next;
-  }
+  const info = laneInfo(state, index);
+  return { cells: info.cells, blocked: info.blocked, blocker: info.blocker };
 }
 
-function cellLabel(state: ArrowsState, index: number): string {
-  const row = Math.floor(index / state.size) + 1;
-  const col = (index % state.size) + 1;
+/** Lock tier 0-3 drives the arrow tint: 0 free, then 1, 2 and 3+ escapes. */
+export function lockTier(lock: number): number {
+  return Math.max(0, Math.min(3, Math.floor(lock)));
+}
+
+function cellLabel(state: ArrowsState, index: number, cell: number): string {
+  const row = Math.floor(cell / state.size) + 1;
+  const col = (cell % state.size) + 1;
   const arrow = state.arrows[index];
-  if (!arrow || (state.bodies[index] ?? 0) <= 0) return `Empty at row ${row} column ${col}`;
+  if (!arrow || state.alive[index] !== true) return `Empty at row ${row} column ${col}`;
   const lock = isLocked(state, index) ? ", locked" : "";
-  const long = arrow.length > 1 ? `, ${arrow.length} cells long` : "";
-  return `Arrow at row ${row} column ${col}, pointing ${dirName(arrow.dir)}${long}${lock}, tap to launch`;
+  const length = arrow.length > 1 ? `, ${arrow.length} cells long` : "";
+  return `Arrow at row ${row} column ${col}, pointing ${dirName(arrow.dir)}${length}${lock}, tap to launch`;
 }
 
 export function boardHtml(state: ArrowsState, view: BoardView = {}): string {
-  const moves = new Set(movableIndices(state.size, state.arrows, state.heads, state.bodies));
+  const moves = new Set(availableIndices(state));
   const occupied = new Map<number, { arrow: number; offset: number }>();
   for (let i = 0; i < state.arrows.length; i += 1) {
-    const body = state.bodies[i] ?? 0;
-    if (body <= 0) continue;
+    if (state.alive[i] !== true) continue;
     const arrow = state.arrows[i]!;
-    bodyCells(state.size, arrow.dir, state.heads[i]!, body).forEach((cell, offset) => {
-      occupied.set(cell, { arrow: i, offset });
-    });
+    const cells: number[] = [];
+    let cell = arrow.head;
+    for (let n = 0; n < arrow.length && cell >= 0; n += 1) {
+      cells.push(cell);
+      cell = stepBack(state.size, cell, arrow.dir);
+    }
+    cells.forEach((body, offset) => occupied.set(body, { arrow: i, offset }));
   }
 
-  const lane = view.press != null ? laneCells(state, view.press) : null;
-  const laneSet = new Set(lane?.cells ?? []);
-  const laneBlock = lane?.blocked ? lane.cells[lane.cells.length - 1] : -1;
+  const preview = view.press != null ? laneInfo(state, view.press) : null;
+  const laneSet = new Set(preview?.cells ?? []);
+  const laneBlock = preview?.blocked ? preview.blocker : -1;
 
   const rows: string[] = [];
   for (let row = 0; row < state.size; row += 1) {
@@ -76,7 +73,7 @@ export function boardHtml(state: ArrowsState, view: BoardView = {}): string {
       }
       const arrow = state.arrows[part.arrow]!;
       const locked = isLocked(state, part.arrow);
-      const classes = ["nar-tile", `d${arrow.dir}`];
+      const classes = ["nar-tile", `d${arrow.dir}`, `len${arrow.length}`, `tier${lockTier(arrow.lock)}`];
       classes.push(part.offset === 0 ? "head" : "tail");
       if (arrow.length > 1) classes.push("long");
       if (locked) classes.push("locked");
@@ -88,10 +85,9 @@ export function boardHtml(state: ArrowsState, view: BoardView = {}): string {
       const glyph = part.offset === 0 ? ARROW_TIP : "";
       const lockMark = locked && part.offset === 0 ? LOCK_MARK : "";
       cells.push(
-        `<button type="button" role="gridcell" tabindex="-1" class="${classes.join(" ")}" data-arrow="${part.arrow}" data-cell="${index}" aria-label="${cellLabel(
-          state,
-          part.arrow,
-        )}">${glyph}${lockMark}</button>`,
+        `<button type="button" role="gridcell" tabindex="-1" class="${classes.join(" ")}" data-arrow="${
+          part.arrow
+        }" data-cell="${index}" aria-label="${cellLabel(state, part.arrow, index)}">${glyph}${lockMark}</button>`,
       );
     }
     rows.push(`<div role="row" class="nar-row">${cells.join("")}</div>`);
@@ -102,24 +98,37 @@ export function boardHtml(state: ArrowsState, view: BoardView = {}): string {
   )}</div>`;
 }
 
+/** One cell backwards (opposite the arrow direction), or -1 off board. */
+function stepBack(size: number, cell: number, dir: number): number {
+  const dr = [-1, 0, 1, 0][dir] ?? 0;
+  const dc = [0, 1, 0, -1][dir] ?? 0;
+  const row = Math.floor(cell / size) - dr;
+  const col = (cell % size) - dc;
+  if (row < 0 || col < 0 || row >= size || col >= size) return -1;
+  return row * size + col;
+}
+
 export function remainingArrows(state: ArrowsState): number {
-  return state.bodies.reduce((count, body) => (body > 0 ? count + 1 : count), 0);
+  return state.alive.reduce((count, live) => (live ? count + 1 : count), 0);
+}
+
+export function readyCount(state: ArrowsState): number {
+  return state.status === "playing" ? availableIndices(state).length : 0;
 }
 
 export function statusText(state: ArrowsState): string {
   if (state.status === "solved") return "Clean exit. Every arrow escaped.";
-  if (state.status === "stuck") return "Dead end — no arrow can launch.";
-  const moves = movableIndices(state.size, state.arrows, state.heads, state.bodies);
-  if (moves.length === 0) return "Dead end — no arrow can launch.";
-  const ready = moves.length === 1 ? "1 arrow is ready to launch." : `${moves.length} arrows are ready to launch.`;
-  return `${ready} Launch them in the right order.`;
+  const ready = availableIndices(state).length;
+  if (ready === 0) return "No arrow can launch — undo a tap.";
+  const word = ready === 1 ? "1 arrow is ready" : `${ready} arrows are ready`;
+  return `${word}. Launch one with a clear lane.`;
 }
 
 export function hudHtml(state: ArrowsState): string {
   return `<div class="nar-hud" role="group" aria-label="Run stats">
     <div class="nar-stat"><span class="k">LEFT</span><span class="v" data-hud="left">${remainingArrows(state)}</span></div>
-    <div class="nar-stat"><span class="k">LAUNCHES</span><span class="v" data-hud="launches">${state.launches}</span></div>
-    <div class="nar-stat"><span class="k">PAR</span><span class="v" data-hud="par">${state.par}</span></div>
+    <div class="nar-stat"><span class="k">READY</span><span class="v" data-hud="ready">${readyCount(state)}</span></div>
+    <div class="nar-stat"><span class="k">MISSTEPS</span><span class="v" data-hud="missteps">${state.missteps}</span></div>
     <div class="nar-stat"><span class="k">HINTS</span><span class="v" data-hud="hints">${state.hints}</span></div>
   </div>`;
 }
@@ -144,6 +153,7 @@ export interface MenuView {
   levels: LevelOption[];
   totalStars: number;
   nextLevel: number;
+  perfect: number;
   bestRun: number;
   boards: number;
   dailyDone: boolean;
@@ -168,15 +178,28 @@ function dailyCardHtml(view: MenuView): string {
   </button>`;
 }
 
+function recordsHtml(view: MenuView): string {
+  const solved = view.levels.filter((option) => option.stars > 0).length;
+  return `<div class="nar-records" role="group" aria-label="Records">
+    <div class="nar-record"><span class="k">SOLVED</span><span class="v">${solved} / ${view.levels.length}</span></div>
+    <div class="nar-record"><span class="k">PERFECT</span><span class="v">${view.perfect}</span></div>
+    <div class="nar-record"><span class="k">STARS</span><span class="v">${view.totalStars}</span></div>
+    <div class="nar-record"><span class="k">BEST RUN</span><span class="v">${view.bestRun}</span></div>
+  </div>`;
+}
+
 function levelGridHtml(view: MenuView): string {
   const cells = view.levels.map((option) => {
     const locked = !option.unlocked;
-    const label = locked ? `Level ${option.level}, locked` : `Level ${option.level}, ${option.stars} of 3 stars`;
-    return `<button type="button" class="nar-level${locked ? " locked" : ""}${option.stars > 0 ? " won" : ""}" data-level="${
-      option.level
-    }"${locked ? " disabled" : ""} aria-label="${label}">
+    const stars = Math.max(0, Math.min(3, Math.floor(option.stars)));
+    const label = locked
+      ? `Level ${option.level}, locked`
+      : `Level ${option.level}, ${stars} of 3 stars`;
+    return `<button type="button" class="nar-level${locked ? " locked" : ""}${
+      stars > 0 ? " won" : ""
+    }${stars >= 3 ? " perfect" : ""}" data-level="${option.level}"${locked ? " disabled" : ""} aria-label="${label}">
       <span class="nar-level-num">${option.level}</span>
-      ${option.stars > 0 ? `<span class="nar-level-stars" aria-hidden="true">${"★".repeat(option.stars)}</span>` : ""}
+      ${stars > 0 ? `<span class="nar-level-stars" aria-hidden="true">${"★".repeat(stars)}</span>` : ""}
     </button>`;
   });
   return `<div class="nar-levels" role="group" aria-label="Levels">${cells.join("")}</div>`;
@@ -201,10 +224,9 @@ export function menuHtml(view: MenuView, reduced: boolean): string {
       </button>
       <button type="button" class="nar-endless" data-act="endless">
         <span class="nar-endless-k">ENDLESS</span>
-        <span class="nar-endless-sub">${
-          view.bestRun > 0 ? `${view.bestRun} BOARD RUN · ${view.boards} CLEARED` : "CHAIN BOARDS · SCORE ATTACK"
-        }</span>
+        <span class="nar-endless-sub">LARGE BOARDS · SCORE ATTACK</span>
       </button>
+      ${recordsHtml(view)}
       <div class="nar-menu-label" aria-hidden="true">LEVELS</div>
       ${levelGridHtml(view)}
     </div>
@@ -216,10 +238,9 @@ export interface ResultView {
   level: number;
   date: string;
   solved: boolean;
-  stuck: boolean;
   score: number;
   launches: number;
-  par: number;
+  missteps: number;
   hints: number;
   stars: number;
   arrows: number;
@@ -238,12 +259,12 @@ export function resultCardHtml(view: ResultView): string {
     view.mode === "daily"
       ? view.solved
         ? "DAILY COMPLETE"
-        : "DEAD END"
+        : "DAILY OVER"
       : view.mode === "endless"
         ? "RUN OVER"
         : view.solved
           ? "BOARD CLEARED"
-          : "DEAD END";
+          : "BOARD OVER";
   const badge =
     view.mode === "daily"
       ? view.ranked
@@ -253,10 +274,12 @@ export function resultCardHtml(view: ResultView): string {
         ? view.isBest
           ? `<div class="nar-practice reward">NEW BEST</div>`
           : `<div class="nar-practice">${view.boards} BOARDS CLEARED</div>`
-        : `<div class="nar-practice reward">LEVEL ${view.level}</div>`;
+        : `<div class="nar-practice reward">LEVEL ${view.level} · ${view.arrows} ARROWS</div>`;
   const replay = view.mode === "daily" ? "daily-again" : view.mode === "endless" ? "endless" : "level";
   const next =
-    view.mode === "level" && view.solved && view.hasNext ? `<button class="cta-play" data-act="level-next">NEXT LEVEL</button>` : "";
+    view.mode === "level" && view.solved && view.hasNext
+      ? `<button class="cta-play" data-act="level-next">NEXT LEVEL</button>`
+      : "";
   return `<div class="overlay nar-overlay">
     <div class="win-card nar-card">
       <div class="nar-card-glow" aria-hidden="true"></div>
@@ -266,7 +289,7 @@ export function resultCardHtml(view: ResultView): string {
       <div class="nar-result-grid">
         ${resultStat("SCORE", String(view.score), "wide")}
         ${resultStat("LAUNCHES", String(view.launches))}
-        ${resultStat("PAR", String(view.par))}
+        ${resultStat("MISSTEPS", String(view.missteps))}
         ${resultStat("HINTS", String(view.hints))}
       </div>
       <div class="win-actions">
@@ -287,17 +310,19 @@ export function helpHtml(reduced: boolean): string {
       <span class="nar-spacer"></span>
     </div>
     <div class="nar-help">
-      <p><b>Launch</b> an arrow by tapping it. It slides one cell in the direction it points — it can never turn.</p>
-      <p>An arrow only moves when the cell in front of it is empty. Wall it in and it stays put. When an arrow reaches the edge it <b>escapes</b>.</p>
-      <p>Clear every arrow to finish. If arrows remain and none can move, the board is a <b>dead end</b>.</p>
+      <p>Tap an arrow to <b>launch</b> it. It shoots straight in the direction it points and escapes off the edge.</p>
+      <p>An arrow needs its <b>whole lane</b> to the edge clear. Hold an arrow to preview the lane: green means it can go, red stops at whatever blocks it.</p>
+      <p><b>Long arrows</b> take up two or three cells, so they block more lanes and free more space when they leave.</p>
+      <p><b>Locked arrows</b> wake only after a number of other arrows have escaped. The badge shows how many.</p>
+      <p>Clear every arrow to finish the board. You can never dead end — every board has an order that works.</p>
       <ul class="nar-legend">
-        <li><span class="nar-legend-cell ready" aria-hidden="true"></span> Ready — a clear cell ahead.</li>
-        <li><span class="nar-legend-cell held" aria-hidden="true"></span> Held — something blocks the way.</li>
+        <li><span class="nar-legend-cell ready" aria-hidden="true"></span> Ready — a clear lane to the edge.</li>
+        <li><span class="nar-legend-cell held" aria-hidden="true"></span> Held — something sits in the lane.</li>
         <li><span class="nar-legend-cell locked" aria-hidden="true"></span> Locked — wakes after enough escapes.</li>
-        <li><span class="nar-legend-cell long" aria-hidden="true"></span> Long arrow — takes extra launches to clear.</li>
+        <li><span class="nar-legend-cell long" aria-hidden="true"></span> Long arrow — fills two or three cells.</li>
       </ul>
-      <p>The <b>par</b> is the fewest launches the board can be cleared in. Finish without hints for three stars.</p>
-      <p class="nar-dim">Keyboard: move with the arrow keys, press Enter to launch, U to undo, H for a hint.</p>
+      <p>Three stars need a clean run: no hints and no wasted taps.</p>
+      <p class="nar-dim">Keyboard: arrows to move, Enter to launch, U to undo, H for a hint.</p>
       <button class="cta-play" data-act="close-help">Got it</button>
     </div>
   </div>`;
