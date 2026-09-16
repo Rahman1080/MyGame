@@ -13,6 +13,7 @@ describe("game registry", () => {
       "snake",
       "breaker",
       "matrix",
+      "wordsearch",
     ]);
   });
 

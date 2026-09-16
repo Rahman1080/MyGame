@@ -247,6 +247,7 @@ export interface SaveV2 {
     snake: BasicScoreSave;
     breaker: BasicScoreSave;
     matrix: BasicScoreSave;
+    wordsearch: BasicScoreSave;
   };
 }
 
@@ -310,6 +311,7 @@ export function defaultSaveV2(): SaveV2 {
       snake: { best: 0 },
       breaker: { best: 0 },
       matrix: { best: 0 },
+      wordsearch: { best: 0 },
     },
   };
 }
@@ -499,6 +501,10 @@ export function sanitizeV2(raw: unknown): SaveV2 {
   if (g.matrix && typeof g.matrix === "object") {
     const m = g.matrix as Record<string, unknown>;
     d.games.matrix.best = asCount(m.best);
+  }
+  if (g.wordsearch && typeof g.wordsearch === "object") {
+    const ws = g.wordsearch as Record<string, unknown>;
+    d.games.wordsearch.best = asCount(ws.best);
   }
   d.version = 2;
   return d;

@@ -114,6 +114,18 @@ export const GAMES: GameDescriptor[] = [
     },
     load: () => import("../games/matrix"),
   },
+  {
+    meta: {
+      id: "wordsearch",
+      name: "NEON WORD SEARCH",
+      tagline: "Find hidden words",
+      icon: "wordsearch",
+      accent: "#00FFA3",
+      status: "ready",
+      hasGauntlet: false,
+    },
+    load: () => import("../games/wordsearch"),
+  },
 ];
 
 export function findGame(id: string): GameDescriptor | undefined {
