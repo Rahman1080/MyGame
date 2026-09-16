@@ -126,17 +126,28 @@ export class BreakerController {
     this.canvas = this.container.querySelector<HTMLCanvasElement>("#breaker-canvas");
     if (this.canvas) {
       this.ctx = this.canvas.getContext("2d");
-      const dpr = window.devicePixelRatio || 1;
-      const w = Math.min(360, Math.floor(window.innerWidth * 0.92));
-      const h = Math.floor(w * (480 / 360));
-      this.canvas.width = w * dpr;
-      this.canvas.height = h * dpr;
-      this.canvas.style.width = `${w}px`;
-      this.canvas.style.height = `${h}px`;
-      if (this.ctx) {
-        this.ctx.scale(dpr * (w / 360), dpr * (h / 480));
-      }
+      this.resizeCanvas();
     }
+  }
+
+  private resizeCanvas(): void {
+    if (!this.canvas || !this.ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const maxW = Math.min(360, Math.floor(window.innerWidth * 0.92));
+    const maxH = Math.floor(window.innerHeight * 0.54);
+    const aspect = 480 / 360;
+    let w = maxW;
+    let h = Math.floor(w * aspect);
+    if (h > maxH) {
+      h = maxH;
+      w = Math.floor(h / aspect);
+    }
+    this.canvas.width = w * dpr;
+    this.canvas.height = h * dpr;
+    this.canvas.style.width = `${w}px`;
+    this.canvas.style.height = `${h}px`;
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.scale(dpr * (w / 360), dpr * (h / 480));
   }
 
   private checkSaveHighScore(): void {
@@ -293,6 +304,7 @@ export class BreakerController {
     // Keyboard controls
     window.addEventListener("keydown", this.handleKeyDown, { signal });
     window.addEventListener("keyup", this.handleKeyUp, { signal });
+    window.addEventListener("resize", () => this.resizeCanvas(), { signal });
   }
 
   private handleKeyDown = (e: KeyboardEvent): void => {

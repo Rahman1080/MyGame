@@ -6,6 +6,23 @@ export class Synth {
     this.muted = muted;
   }
 
+  unlock(): void {
+    if (this.muted) return;
+    try {
+      if (!this.ctx) {
+        const Ctor =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        this.ctx = new Ctor();
+      }
+      if (this.ctx.state === "suspended") {
+        void this.ctx.resume();
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+
   private audio(): AudioContext | null {
     if (this.muted) return null;
     try {

@@ -1,7 +1,7 @@
 {
-  "name": "GLOWTRAIL",
+  "name": "GLOWTRAIL Arcade",
   "short_name": "GLOWTRAIL",
-  "description": "Rotate. Launch. Escape.",
+  "description": "12 neon puzzle & arcade games in one.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#07080D",

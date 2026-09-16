@@ -232,6 +232,7 @@ export interface ArrowsSave {
 
 export interface BasicScoreSave {
   best: number;
+  level?: number;
 }
 
 export interface SaveV2 {
@@ -509,14 +510,23 @@ export function sanitizeV2(raw: unknown): SaveV2 {
   if (g.wordsearch && typeof g.wordsearch === "object") {
     const ws = g.wordsearch as Record<string, unknown>;
     d.games.wordsearch.best = asCount(ws.best);
+    if (typeof ws.level === "number" && Number.isFinite(ws.level) && ws.level >= 1) {
+      d.games.wordsearch.level = Math.floor(ws.level);
+    }
   }
   if (g.wordconnect && typeof g.wordconnect === "object") {
     const wc = g.wordconnect as Record<string, unknown>;
     d.games.wordconnect.best = asCount(wc.best);
+    if (typeof wc.level === "number" && Number.isFinite(wc.level) && wc.level >= 1) {
+      d.games.wordconnect.level = Math.floor(wc.level);
+    }
   }
   if (g.meowdoku && typeof g.meowdoku === "object") {
     const md = g.meowdoku as Record<string, unknown>;
     d.games.meowdoku.best = asCount(md.best);
+    if (typeof md.level === "number" && Number.isFinite(md.level) && md.level >= 1) {
+      d.games.meowdoku.level = Math.floor(md.level);
+    }
   }
   d.version = 2;
   return d;

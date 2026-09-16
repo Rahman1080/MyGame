@@ -117,16 +117,20 @@ export class MatrixController {
     this.canvas = this.container.querySelector<HTMLCanvasElement>("#matrix-canvas");
     if (this.canvas) {
       this.ctx = this.canvas.getContext("2d");
-      const dpr = window.devicePixelRatio || 1;
-      const size = Math.min(340, Math.floor(window.innerWidth * 0.9));
-      this.canvas.width = size * dpr;
-      this.canvas.height = size * dpr;
-      this.canvas.style.width = `${size}px`;
-      this.canvas.style.height = `${size}px`;
-      if (this.ctx) {
-        this.ctx.scale(dpr, dpr);
-      }
+      this.resizeCanvas();
     }
+  }
+
+  private resizeCanvas(): void {
+    if (!this.canvas || !this.ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const size = Math.min(340, Math.floor(window.innerWidth * 0.9), Math.floor(window.innerHeight * 0.52));
+    this.canvas.width = size * dpr;
+    this.canvas.height = size * dpr;
+    this.canvas.style.width = `${size}px`;
+    this.canvas.style.height = `${size}px`;
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.scale(dpr, dpr);
   }
 
   private checkSaveHighScore(): void {
@@ -235,6 +239,7 @@ export class MatrixController {
 
     // Keyboard
     window.addEventListener("keydown", this.handleKeyDown, { signal });
+    window.addEventListener("resize", () => this.resizeCanvas(), { signal });
   }
 
   private handleKeyDown = (e: KeyboardEvent): void => {

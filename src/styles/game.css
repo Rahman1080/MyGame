@@ -307,7 +307,12 @@
   z-index: 1;
 }
 
-.board-wrap canvas { touch-action: none; display: block; }
+.board-wrap canvas {
+  touch-action: none;
+  display: block;
+  max-width: 94vw;
+  max-height: min(56vh, calc(100dvh - 210px));
+}
 
 .prompt {
   position: absolute;

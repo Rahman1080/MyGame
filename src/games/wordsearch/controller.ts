@@ -1,7 +1,7 @@
 import { synth } from "../../audio/synth";
 import { hapticTap } from "../../audio/haptics";
 import { recordHighScore } from "../../save/storage";
-import type { SaveData } from "../../save/schema";
+import type { BasicScoreSave, SaveData } from "../../save/schema";
 import {
   commitSelection,
   createWordSearchGame,
@@ -13,6 +13,7 @@ import {
   type WordSearchDifficulty,
   type WordSearchState,
 } from "./engine";
+import { WORD_CATEGORIES } from "./words";
 import { WordSearchRenderer } from "./render";
 
 export class WordSearchController {
@@ -28,8 +29,8 @@ export class WordSearchController {
   private onBack: (() => void) | null = null;
   private onSave: ((s: SaveData) => void) | null = null;
   private saveData: SaveData | null = null;
-  private arcadeSave: { best: number } | null = null;
-  private onArcadeSave: ((s: { best: number }) => void) | null = null;
+  private arcadeSave: BasicScoreSave | null = null;
+  private onArcadeSave: ((s: BasicScoreSave) => void) | null = null;
   private abortController: AbortController | null = null;
 
   constructor() {
@@ -40,14 +41,24 @@ export class WordSearchController {
   mountArcade(
     container: HTMLElement,
     onBack: () => void,
-    save: { best: number },
-    onSave: (s: { best: number }) => void,
+    save: BasicScoreSave,
+    onSave: (s: BasicScoreSave) => void,
   ): void {
     this.container = container;
     this.onBack = onBack;
     this.arcadeSave = save;
     this.onArcadeSave = onSave;
-    this.state = createWordSearchGame(1, save.best ?? 0, "hard");
+
+    // Decouple level from high score (if save.best was high score > 50, start at level 1)
+    const savedLvl =
+      typeof save.level === "number" && save.level >= 1
+        ? save.level
+        : save.best > 0 && save.best <= 50
+        ? save.best
+        : 1;
+    const startLevel = Math.max(1, savedLvl);
+
+    this.state = createWordSearchGame(startLevel, save.best ?? 0, "hard");
     this.renderDom();
     this.setupListeners();
     this.startLoop();
@@ -65,7 +76,8 @@ export class WordSearchController {
     this.onSave = onSave;
 
     const currentHigh = saveData.arcadeHighScores?.["wordsearch"] ?? 0;
-    this.state = createWordSearchGame(1, currentHigh, "hard");
+    const startLevel = currentHigh > 0 && currentHigh <= 50 ? currentHigh : 1;
+    this.state = createWordSearchGame(startLevel, currentHigh, "hard");
 
     this.renderDom();
     this.setupListeners();
@@ -85,7 +97,9 @@ export class WordSearchController {
           <div class="center-meta">
             <div class="lvl">WORD SEARCH · LVL ${this.state.level}</div>
             <div class="par">SCORE <b id="ws-score">${this.state.score}</b> · HIGH <b id="ws-high">${this.state.highScore}</b></div>
-            <div class="par-sub" id="ws-cat" style="color: ${this.state.category.themeColor}; font-weight: 700;">${this.state.category.name}</div>
+            <div class="par-sub" id="ws-cat" style="color: ${this.state.category.themeColor}; font-weight: 700;">
+              ${this.state.category.name} · <span style="color: #FFD700; font-size: 10px; letter-spacing: 0.04em;">${this.state.trickiness}</span>
+            </div>
           </div>
           <button class="icon-btn" data-act="hint" id="ws-hint-btn" aria-label="Hint">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-7 7c0 2.5 1.5 4.5 3 6h8c1.5-1.5 3-3.5 3-6a7 7 0 0 0-7-7z"/></svg>
@@ -124,16 +138,20 @@ export class WordSearchController {
     this.canvas = this.container.querySelector<HTMLCanvasElement>("#ws-canvas");
     if (this.canvas) {
       this.ctx = this.canvas.getContext("2d");
-      const dpr = window.devicePixelRatio || 1;
-      const size = Math.min(350, Math.floor(window.innerWidth * 0.92));
-      this.canvas.width = size * dpr;
-      this.canvas.height = size * dpr;
-      this.canvas.style.width = `${size}px`;
-      this.canvas.style.height = `${size}px`;
-      if (this.ctx) {
-        this.ctx.scale(dpr, dpr);
-      }
+      this.resizeCanvas();
     }
+  }
+
+  private resizeCanvas(): void {
+    if (!this.canvas || !this.ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const size = Math.min(350, Math.floor(window.innerWidth * 0.92), Math.floor(window.innerHeight * 0.46));
+    this.canvas.width = size * dpr;
+    this.canvas.height = size * dpr;
+    this.canvas.style.width = `${size}px`;
+    this.canvas.style.height = `${size}px`;
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.scale(dpr, dpr);
   }
 
   private renderWordPills(): string {
@@ -152,10 +170,6 @@ export class WordSearchController {
     if (listEl) {
       listEl.innerHTML = this.renderWordPills();
     }
-    const scoreEl = this.container?.querySelector("#ws-score");
-    const highEl = this.container?.querySelector("#ws-high");
-    if (scoreEl) scoreEl.textContent = this.state.score.toString();
-    if (highEl) highEl.textContent = this.state.highScore.toString();
   }
 
   private checkSaveHighScore(): void {
@@ -163,10 +177,10 @@ export class WordSearchController {
       this.state.highScore = this.state.score;
     }
     if (this.arcadeSave && this.onArcadeSave) {
-      if (this.state.score > this.arcadeSave.best) {
-        this.arcadeSave.best = this.state.score;
-        this.onArcadeSave({ best: this.arcadeSave.best });
-      }
+      const best = Math.max(this.arcadeSave.best ?? 0, this.state.score);
+      this.arcadeSave.best = best;
+      this.arcadeSave.level = Math.max(this.arcadeSave.level ?? 1, this.state.level);
+      this.onArcadeSave({ best, level: this.arcadeSave.level });
     } else if (this.saveData && this.onSave) {
       const updated = recordHighScore(this.saveData, "wordsearch", this.state.score);
       this.saveData = updated;
@@ -244,14 +258,15 @@ export class WordSearchController {
         (e) => {
           try {
             this.canvas?.setPointerCapture(e.pointerId);
-          } catch {
-            // Ignore if pointer capture fails
-          }
+          } catch {}
           const cell = getCellFromEvent(e.clientX, e.clientY);
-          if (!cell) return;
-          this.isDragging = true;
-          this.dragStartPos = cell;
-          updateSelection(this.state, cell, cell);
+          if (cell) {
+            this.isDragging = true;
+            this.dragStartPos = cell;
+            updateSelection(this.state, cell, cell);
+            synth.step();
+            hapticTap();
+          }
         },
         { signal },
       );
@@ -262,7 +277,12 @@ export class WordSearchController {
           if (!this.isDragging || !this.dragStartPos) return;
           const cell = getCellFromEvent(e.clientX, e.clientY);
           if (cell) {
-            updateSelection(this.state, this.dragStartPos, cell);
+            const prevLen = this.state.activeSelection?.cells.length ?? 0;
+            const sel = updateSelection(this.state, this.dragStartPos, cell);
+            if (sel.cells.length !== prevLen) {
+              synth.step();
+              hapticTap();
+            }
           }
         },
         { signal },
@@ -273,20 +293,28 @@ export class WordSearchController {
         this.isDragging = false;
         this.dragStartPos = null;
 
-        const foundWord = commitSelection(this.state);
-        if (foundWord) {
+        const res = commitSelection(this.state);
+        if (res) {
           synth.combo();
           hapticTap();
           this.checkSaveHighScore();
           this.updateWordListDom();
 
+          const scoreEl = this.container?.querySelector("#ws-score");
+          const highEl = this.container?.querySelector("#ws-high");
+          if (scoreEl) scoreEl.textContent = this.state.score.toString();
+          if (highEl) highEl.textContent = this.state.highScore.toString();
+
           if (this.state.isCompleted) {
             synth.star();
-            this.checkSaveHighScore();
             if (this.canvas) {
               const dpr = window.devicePixelRatio || 1;
-              this.renderer.emitVictoryBurst(this.canvas.width / dpr, this.canvas.height / dpr);
+              this.renderer.emitVictoryBurst(
+                this.canvas.width / dpr,
+                this.canvas.height / dpr,
+              );
             }
+            this.checkSaveHighScore();
             const modal = this.container?.querySelector<HTMLElement>("#ws-winmodal");
             const stats = this.container?.querySelector<HTMLElement>("#ws-final-stats");
             if (modal) modal.style.display = "flex";
@@ -298,6 +326,8 @@ export class WordSearchController {
       this.canvas.addEventListener("pointerup", handlePointerEnd, { signal });
       this.canvas.addEventListener("pointercancel", handlePointerEnd, { signal });
     }
+
+    window.addEventListener("resize", () => this.resizeCanvas(), { signal });
   }
 
   private advanceNextLevel(): void {
@@ -306,8 +336,19 @@ export class WordSearchController {
       this.arcadeSave?.best ?? this.saveData?.arcadeHighScores?.["wordsearch"] ?? this.state.highScore;
     const carriedScore = this.state.score;
     const diff = this.state.difficulty;
-    this.state = createWordSearchGame(nextLvl, currentHigh, diff);
+    const prevIdx = WORD_CATEGORIES.findIndex((c) => c.name === this.state.category.name);
+    this.state = createWordSearchGame(nextLvl, currentHigh, diff, Math.random, prevIdx);
     this.state.score = carriedScore;
+    if (this.arcadeSave && this.onArcadeSave) {
+      const best = Math.max(this.arcadeSave.best ?? 0, carriedScore);
+      this.arcadeSave.best = best;
+      this.arcadeSave.level = nextLvl;
+      this.onArcadeSave({ best, level: nextLvl });
+    } else if (this.saveData && this.onSave) {
+      const updated = recordHighScore(this.saveData, "wordsearch", carriedScore);
+      this.saveData = updated;
+      this.onSave(updated);
+    }
     this.renderDom();
     this.setupListeners();
   }

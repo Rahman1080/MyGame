@@ -8,6 +8,8 @@ import { createSaveService } from "./platform/services/save";
 import { createSettings } from "./platform/services/settings";
 import { NoopAnalytics } from "./platform/services/telemetry";
 
+import { synth } from "./audio/synth";
+
 const root = document.querySelector<HTMLDivElement>("#app")!;
 const save = createSaveService();
 const settings = createSettings(
@@ -15,6 +17,15 @@ const settings = createSettings(
   (next) => save.set(next),
 );
 const audio = createAudio(save.get().profile.muted);
+
+// Mobile Safari/Android Web Audio gesture unlock
+if (typeof window !== "undefined") {
+  const unlockAudio = () => {
+    synth.unlock();
+  };
+  window.addEventListener("pointerdown", unlockAudio, { once: true, passive: true });
+  window.addEventListener("keydown", unlockAudio, { once: true });
+}
 
 startRouter(root, {
   save,

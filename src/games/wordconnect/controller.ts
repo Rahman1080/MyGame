@@ -1,7 +1,7 @@
 import { synth } from "../../audio/synth";
 import { hapticTap } from "../../audio/haptics";
 import { recordHighScore } from "../../save/storage";
-import type { SaveData } from "../../save/schema";
+import type { BasicScoreSave, SaveData } from "../../save/schema";
 import {
   addIndexToPath,
   clearPath,
@@ -27,8 +27,8 @@ export class WordConnectController {
   private onBack: (() => void) | null = null;
   private onSave: ((s: SaveData) => void) | null = null;
   private saveData: SaveData | null = null;
-  private arcadeSave: { best: number } | null = null;
-  private onArcadeSave: ((s: { best: number }) => void) | null = null;
+  private arcadeSave: BasicScoreSave | null = null;
+  private onArcadeSave: ((s: BasicScoreSave) => void) | null = null;
   private abortController: AbortController | null = null;
 
   constructor() {
@@ -39,14 +39,24 @@ export class WordConnectController {
   mountArcade(
     container: HTMLElement,
     onBack: () => void,
-    save: { best: number },
-    onSave: (s: { best: number }) => void,
+    save: BasicScoreSave,
+    onSave: (s: BasicScoreSave) => void,
   ): void {
     this.container = container;
     this.onBack = onBack;
     this.arcadeSave = save;
     this.onArcadeSave = onSave;
-    this.state = createWordConnectGame(1, save.best ?? 0);
+
+    // Decouple level from high score (if save.best was high score > 50, start at level 1)
+    const savedLvl =
+      typeof save.level === "number" && save.level >= 1
+        ? save.level
+        : save.best > 0 && save.best <= 50
+        ? save.best
+        : 1;
+    const startLevel = Math.max(1, savedLvl);
+
+    this.state = createWordConnectGame(startLevel, save.best ?? 0);
     this.renderDom();
     this.setupListeners();
     this.startLoop();
@@ -64,7 +74,8 @@ export class WordConnectController {
     this.onSave = onSave;
 
     const currentHigh = saveData.arcadeHighScores?.["wordconnect"] ?? 0;
-    this.state = createWordConnectGame(1, currentHigh);
+    const startLevel = currentHigh > 0 && currentHigh <= 50 ? currentHigh : 1;
+    this.state = createWordConnectGame(startLevel, currentHigh);
 
     this.renderDom();
     this.setupListeners();
@@ -75,7 +86,7 @@ export class WordConnectController {
     if (!this.container) return;
 
     this.container.innerHTML = `
-      <div class="shell enter">
+      <div class="shell enter" style="padding-bottom: max(12px, var(--safe-bottom));">
         <div class="hud">
           <button class="icon-btn" data-act="back" aria-label="Back to Arcade">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
@@ -84,22 +95,33 @@ export class WordConnectController {
           <div class="center-meta">
             <div class="lvl">WORD CONNECT · LVL ${this.state.level}</div>
             <div class="par">SCORE <b id="wc-score">${this.state.score}</b> · HIGH <b id="wc-high">${this.state.highScore}</b></div>
-            <div class="par-sub" id="wc-bonus-info" style="color: #FF9900; font-weight: 700;">SWIPE LETTERS TO CONNECT</div>
+            <div class="par-sub" id="wc-bonus-info" style="color: #FF9900; font-weight: 700;">CONNECT LETTERS TO SPELL</div>
           </div>
-          <button class="icon-btn" data-act="hint" id="wc-hint-btn" aria-label="Hint">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-7 7c0 2.5 1.5 4.5 3 6h8c1.5-1.5 3-3.5 3-6a7 7 0 0 0-7-7z"/></svg>
-            <span id="wc-hint-text">Hint (${this.state.hintsRemaining})</span>
+          <button class="icon-btn sm" data-act="reset-lvl" title="Restart Level" style="color: #64748b; font-size: 11px;">
+            <span>Restart</span>
           </button>
         </div>
 
-        <div class="board-wrap" style="align-items: center; justify-content: center; position: relative;">
-          <canvas id="wc-canvas" width="340" height="460" style="touch-action: none; border-radius: 14px; max-width: 92vw; max-height: 56vh; cursor: grab;"></canvas>
+        <div class="board-wrap" style="flex: 1; position: relative; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 0; overflow: hidden;">
+          <canvas id="wc-canvas" style="touch-action: none; width: 100%; height: 100%; display: block; cursor: grab;"></canvas>
+
+          <!-- Ergonomic Wheel Flanking Controls (Thumb Level) -->
+          <div class="wc-wheel-controls" style="position: absolute; bottom: 20px; width: 100%; max-width: 380px; display: flex; justify-content: space-between; padding: 0 16px; pointer-events: none; z-index: 5;">
+            <button class="icon-btn" data-act="shuffle" id="wc-shuffle-btn" title="Shuffle Letters" style="pointer-events: auto; width: 48px; height: 48px; border-radius: 50%; border: 1.5px solid rgba(255,153,0,0.55); background: rgba(17,24,39,0.92); color: #FF9900; box-shadow: 0 0 14px rgba(255,153,0,0.35); display: flex; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+            </button>
+
+            <button class="icon-btn" data-act="hint" id="wc-hint-btn" title="Hint" style="pointer-events: auto; width: 48px; height: 48px; border-radius: 50%; border: 1.5px solid rgba(255,215,64,0.55); background: rgba(17,24,39,0.92); color: #FFD740; box-shadow: 0 0 14px rgba(255,215,64,0.35); display: flex; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(8px);">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M12 2a7 7 0 0 0-7 7c0 2.5 1.5 4.5 3 6h8c1.5-1.5 3-3.5 3-6a7 7 0 0 0-7-7z"/></svg>
+              <span id="wc-hint-badge" style="font-size: 10px; font-weight: 800; margin-top: -2px;">${this.state.hintsRemaining}</span>
+            </button>
+          </div>
 
           <!-- Floating Toast Notification Banner -->
-          <div id="wc-toast" style="position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(11,16,29,0.92); border: 1.5px solid #FF9900; color: #FFD700; padding: 6px 16px; border-radius: 20px; font-weight: 700; font-size: 12px; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; text-shadow: 0 0 8px rgba(255,153,0,0.6);"></div>
+          <div id="wc-toast" style="position: absolute; top: 12px; left: 50%; transform: translateX(-50%); background: rgba(11,16,29,0.95); border: 1.5px solid #FF9900; color: #FFD700; padding: 6px 18px; border-radius: 20px; font-weight: 700; font-size: 13px; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; text-shadow: 0 0 10px rgba(255,153,0,0.6); z-index: 10;"></div>
 
           <!-- Win Modal Overlay -->
-          <div id="wc-winmodal" class="overlay" style="display: none;">
+          <div id="wc-winmodal" class="overlay" style="display: none; z-index: 20;">
             <div class="win-card">
               <h2 style="color: #FF9900; text-shadow: 0 0 16px rgba(255,153,0,0.6);">AWESOME!</h2>
               <div class="win-meta" id="wc-final-stats">ALL WORDS SOLVED!</div>
@@ -110,31 +132,29 @@ export class WordConnectController {
             </div>
           </div>
         </div>
-
-        <!-- Controls: Shuffle Prop Button -->
-        <div class="dock" style="display: flex; justify-content: center; gap: 16px; margin-top: 8px;">
-          <button class="icon-btn" data-act="shuffle" id="wc-shuffle-btn" style="padding: 6px 18px; border-radius: 20px; border: 1px solid rgba(255,153,0,0.4); background: rgba(17,24,39,0.8); color: #FF9900; font-weight: 700;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
-            <span style="margin-left: 6px;">Shuffle</span>
-          </button>
-        </div>
       </div>
     `;
 
     this.canvas = this.container.querySelector<HTMLCanvasElement>("#wc-canvas");
     if (this.canvas) {
       this.ctx = this.canvas.getContext("2d");
-      const dpr = window.devicePixelRatio || 1;
-      const w = Math.min(340, Math.floor(window.innerWidth * 0.92));
-      const h = Math.floor(w * (460 / 340));
-      this.canvas.width = w * dpr;
-      this.canvas.height = h * dpr;
-      this.canvas.style.width = `${w}px`;
-      this.canvas.style.height = `${h}px`;
-      if (this.ctx) {
-        this.ctx.scale(dpr * (w / 340), dpr * (h / 460));
-      }
+      this.resizeCanvas();
     }
+  }
+
+  private resizeCanvas(): void {
+    if (!this.canvas || !this.ctx) return;
+    const dpr = window.devicePixelRatio || 1;
+    const wrap = this.canvas.parentElement;
+    const w = wrap ? Math.min(430, wrap.clientWidth || window.innerWidth) : Math.min(430, window.innerWidth);
+    const h = wrap ? (wrap.clientHeight || 560) : 560;
+
+    this.canvas.width = w * dpr;
+    this.canvas.height = h * dpr;
+    this.canvas.style.width = `${w}px`;
+    this.canvas.style.height = `${h}px`;
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    this.ctx.scale(dpr, dpr);
   }
 
   private showToast(msg: string): void {
@@ -149,21 +169,22 @@ export class WordConnectController {
   private updateHud(): void {
     const scoreEl = this.container?.querySelector("#wc-score");
     const highEl = this.container?.querySelector("#wc-high");
-    const hintText = this.container?.querySelector("#wc-hint-text");
+    const hintBadge = this.container?.querySelector("#wc-hint-badge");
     if (scoreEl) scoreEl.textContent = this.state.score.toString();
     if (highEl) highEl.textContent = this.state.highScore.toString();
-    if (hintText) hintText.textContent = `Hint (${this.state.hintsRemaining})`;
+    if (hintBadge) hintBadge.textContent = this.state.hintsRemaining.toString();
   }
 
   private checkSaveHighScore(): void {
     if (this.state.score > this.state.highScore) {
       this.state.highScore = this.state.score;
     }
+    const currentLvl = this.state.level;
     if (this.arcadeSave && this.onArcadeSave) {
-      if (this.state.score > this.arcadeSave.best) {
-        this.arcadeSave.best = this.state.score;
-        this.onArcadeSave({ best: this.arcadeSave.best });
-      }
+      const best = Math.max(this.arcadeSave.best ?? 0, this.state.score);
+      this.arcadeSave.best = best;
+      this.arcadeSave.level = Math.max(this.arcadeSave.level ?? 1, currentLvl);
+      this.onArcadeSave({ best, level: this.arcadeSave.level });
     } else if (this.saveData && this.onSave) {
       const updated = recordHighScore(this.saveData, "wordconnect", this.state.score);
       this.saveData = updated;
@@ -213,6 +234,15 @@ export class WordConnectController {
           return;
         }
 
+        if (target.dataset.act === "reset-lvl") {
+          synth.tap();
+          this.state = createWordConnectGame(1, this.state.highScore);
+          this.checkSaveHighScore();
+          this.renderDom();
+          this.setupListeners();
+          return;
+        }
+
         if (target.dataset.act === "next-level") {
           synth.tap();
           this.advanceNextLevel();
@@ -225,18 +255,22 @@ export class WordConnectController {
     if (this.canvas) {
       const getCanvasCoords = (clientX: number, clientY: number): { x: number; y: number } => {
         const rect = this.canvas!.getBoundingClientRect();
-        const normX = (clientX - rect.left) / rect.width;
-        const normY = (clientY - rect.top) / rect.height;
-        return { x: normX * 340, y: normY * 460 };
+        return {
+          x: clientX - rect.left,
+          y: clientY - rect.top,
+        };
       };
 
       const checkNodeCollision = (pos: { x: number; y: number }): number => {
-        const nodes = this.renderer.getWheelNodePositions(this.state, 340, 460);
+        const dpr = window.devicePixelRatio || 1;
+        const w = this.canvas!.width / dpr;
+        const h = this.canvas!.height / dpr;
+        const nodes = this.renderer.getWheelNodePositions(this.state, w, h);
         for (const n of nodes) {
           const dx = pos.x - n.x;
           const dy = pos.y - n.y;
-          // 1.6x radius allows forgiving touch tracking on mobile screens
-          if (dx * dx + dy * dy <= (n.radius * 1.6) * (n.radius * 1.6)) {
+          // 1.55x radius gives effortless touch tracking on mobile screens
+          if (dx * dx + dy * dy <= (n.radius * 1.55) * (n.radius * 1.55)) {
             return n.index;
           }
         }
@@ -248,9 +282,7 @@ export class WordConnectController {
         (e) => {
           try {
             this.canvas?.setPointerCapture(e.pointerId);
-          } catch {
-            // Ignore if pointer capture fails
-          }
+          } catch {}
           const coords = getCanvasCoords(e.clientX, e.clientY);
           const hitIdx = checkNodeCollision(coords);
           if (hitIdx !== -1) {
@@ -293,7 +325,7 @@ export class WordConnectController {
           synth.combo();
           hapticTap();
           this.checkSaveHighScore();
-          this.showToast("AWESOME!");
+          this.showToast("EXCELLENT!");
           this.updateHud();
 
           if (this.state.isCompleted) {
@@ -315,11 +347,16 @@ export class WordConnectController {
       this.canvas.addEventListener("pointerup", handlePointerEnd, { signal });
       this.canvas.addEventListener("pointercancel", handlePointerEnd, { signal });
     }
+
+    window.addEventListener("resize", () => this.resizeCanvas(), { signal });
   }
 
   private handleVictory(): void {
     synth.star();
-    this.renderer.triggerVictoryBurst(340, 460);
+    const dpr = window.devicePixelRatio || 1;
+    const w = (this.canvas?.width || 360) / dpr;
+    const h = (this.canvas?.height || 560) / dpr;
+    this.renderer.triggerVictoryBurst(w, h);
     this.checkSaveHighScore();
     const modal = this.container?.querySelector<HTMLElement>("#wc-winmodal");
     const stats = this.container?.querySelector<HTMLElement>("#wc-final-stats");
@@ -334,6 +371,12 @@ export class WordConnectController {
     const carriedScore = this.state.score;
     this.state = createWordConnectGame(nextLvl, currentHigh);
     this.state.score = carriedScore;
+    if (this.arcadeSave && this.onArcadeSave) {
+      const best = Math.max(this.arcadeSave.best ?? 0, carriedScore);
+      this.arcadeSave.best = best;
+      this.arcadeSave.level = nextLvl;
+      this.onArcadeSave({ best, level: nextLvl });
+    }
     this.renderDom();
     this.setupListeners();
   }
@@ -344,7 +387,6 @@ export class WordConnectController {
       const dt = Math.min(50, now - this.lastTime);
       this.lastTime = now;
 
-      // Update toast timer
       if (this.toastTimer > 0) {
         this.toastTimer -= dt / 1000;
         if (this.toastTimer <= 0) {

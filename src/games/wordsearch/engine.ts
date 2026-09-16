@@ -27,8 +27,8 @@ export const DIFFICULTY_CONFIG: Record<
   { size: number; wordCount: number; minWordLen: number }
 > = {
   easy: { size: 8, wordCount: 5, minWordLen: 4 },
-  hard: { size: 10, wordCount: 7, minWordLen: 5 },
-  master: { size: 12, wordCount: 9, minWordLen: 6 },
+  hard: { size: 10, wordCount: 7, minWordLen: 4 },
+  master: { size: 12, wordCount: 9, minWordLen: 5 },
 };
 
 export interface WordSearchState {
@@ -44,6 +44,7 @@ export interface WordSearchState {
   hintCell: GridPos | null;
   hintTimerMs: number;
   difficulty: WordSearchDifficulty;
+  trickiness: string;
 }
 
 export const HIGHLIGHT_PALETTE = [
@@ -57,7 +58,7 @@ export const HIGHLIGHT_PALETTE = [
   "#E45CFF", // Magenta
 ];
 
-const DIRECTIONS = [
+export const ALL_DIRECTIONS = [
   { dr: 0, dc: 1 }, // Right
   { dr: 1, dc: 0 }, // Down
   { dr: 1, dc: 1 }, // Down-Right
@@ -68,11 +69,39 @@ const DIRECTIONS = [
   { dr: -1, dc: -1 }, // Up-Left
 ];
 
+export function getDirectionsForLevel(level: number) {
+  if (level <= 2) {
+    // Novice: Horizontal Right & Vertical Down only
+    return [ALL_DIRECTIONS[0]!, ALL_DIRECTIONS[1]!];
+  }
+  if (level <= 4) {
+    // Intermediate: Horizontal, Vertical, and Diagonals Down-Right & Up-Right
+    return [ALL_DIRECTIONS[0]!, ALL_DIRECTIONS[1]!, ALL_DIRECTIONS[2]!, ALL_DIRECTIONS[3]!];
+  }
+  if (level <= 7) {
+    // Tricky: Adds Reverse Horizontal (Left) & Reverse Vertical (Up)
+    return [
+      ALL_DIRECTIONS[0]!, ALL_DIRECTIONS[1]!, ALL_DIRECTIONS[2]!,
+      ALL_DIRECTIONS[3]!, ALL_DIRECTIONS[4]!, ALL_DIRECTIONS[5]!,
+    ];
+  }
+  // Master (8+): All 8 directions active (including Reverse Diagonals)
+  return ALL_DIRECTIONS;
+}
+
+export function getTrickinessLabel(level: number): string {
+  if (level <= 2) return "STANDARD (2 DIRS)";
+  if (level <= 4) return "DIAGONAL (4 DIRS)";
+  if (level <= 7) return "TRICKY (6 DIRS + DECOYS)";
+  return "EXPERT (8 DIRS + TRAP LETTERS)";
+}
+
 export function createWordSearchGame(
   level = 1,
   highScore = 0,
   difficultyOrSize: WordSearchDifficulty | number = "hard",
   rng = Math.random,
+  prevCatIndex = -1,
 ): WordSearchState {
   const difficulty: WordSearchDifficulty =
     typeof difficultyOrSize === "number"
@@ -85,7 +114,12 @@ export function createWordSearchGame(
 
   const config = DIFFICULTY_CONFIG[difficulty];
   const size = config.size;
-  const categoryIndex = (level - 1) % WORD_CATEGORIES.length;
+
+  // Pick a fresh category distinct from previous one
+  let categoryIndex = Math.floor(rng() * WORD_CATEGORIES.length);
+  if (categoryIndex === prevCatIndex) {
+    categoryIndex = (categoryIndex + 1) % WORD_CATEGORIES.length;
+  }
   const category = WORD_CATEGORIES[categoryIndex]!;
 
   const { grid, placedWords } = generateWordGrid(
@@ -94,6 +128,7 @@ export function createWordSearchGame(
     rng,
     config.wordCount,
     config.minWordLen,
+    level,
   );
 
   return {
@@ -109,6 +144,7 @@ export function createWordSearchGame(
     hintCell: null,
     hintTimerMs: 0,
     difficulty,
+    trickiness: getTrickinessLabel(level),
   };
 }
 
@@ -126,6 +162,7 @@ export function setWordSearchDifficulty(
     rng,
     config.wordCount,
     config.minWordLen,
+    state.level,
   );
   state.grid = grid;
   state.placedWords = placedWords;
@@ -133,6 +170,7 @@ export function setWordSearchDifficulty(
   state.hintCell = null;
   state.hintTimerMs = 0;
   state.isCompleted = false;
+  state.trickiness = getTrickinessLabel(state.level);
 }
 
 export function generateWordGrid(
@@ -141,6 +179,7 @@ export function generateWordGrid(
   rng = Math.random,
   maxWords = 6,
   minWordLen = 4,
+  level = 1,
 ): { grid: string[][]; placedWords: PlacedWord[] } {
   const grid: string[][] = Array.from({ length: size }, () =>
     Array.from({ length: size }, () => ""),
@@ -151,19 +190,20 @@ export function generateWordGrid(
   const eligible = wordPool.filter(
     (w) => w.length >= minWordLen && w.length <= size,
   );
-  // Shuffle candidate pool first, then sort longer words first for easier placement
+  // Shuffle candidate pool thoroughly on every generation to guarantee unique word sets
   const candidates = [...eligible]
     .sort(() => rng() - 0.5)
     .sort((a, b) => b.length - a.length);
+
+  const availableDirections = getDirectionsForLevel(level);
 
   let colorIdx = 0;
   for (const word of candidates) {
     if (placedWords.length >= maxWords) break;
     let placed = false;
-    // Try multiple random attempts to place word
-    const attempts = 100;
+    const attempts = 150;
     for (let a = 0; a < attempts && !placed; a++) {
-      const dir = DIRECTIONS[Math.floor(rng() * DIRECTIONS.length)]!;
+      const dir = availableDirections[Math.floor(rng() * availableDirections.length)]!;
       const r = Math.floor(rng() * size);
       const c = Math.floor(rng() * size);
 
@@ -172,7 +212,6 @@ export function generateWordGrid(
 
       if (endR < 0 || endR >= size || endC < 0 || endC >= size) continue;
 
-      // Check if cells are free or have matching characters
       let canPlace = true;
       for (let i = 0; i < word.length; i++) {
         const curR = r + dir.dr * i;
@@ -185,7 +224,6 @@ export function generateWordGrid(
       }
 
       if (canPlace) {
-        // Place word characters
         for (let i = 0; i < word.length; i++) {
           const curR = r + dir.dr * i;
           const curC = c + dir.dc * i;
@@ -205,12 +243,27 @@ export function generateWordGrid(
     }
   }
 
-  // Fill remaining empty cells with random uppercase letters
+  // Collect target characters for deceptive decoy generation
+  const targetChars: string[] = [];
+  for (const pw of placedWords) {
+    for (const ch of pw.word) {
+      targetChars.push(ch);
+    }
+  }
+
+  // Tricky Decoy Letter Injection
   const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const decoyRate = level <= 2 ? 0.0 : level <= 5 ? 0.45 : 0.65;
+
   for (let r = 0; r < size; r++) {
     for (let c = 0; c < size; c++) {
       if (!grid[r]![c]) {
-        grid[r]![c] = ALPHABET[Math.floor(rng() * ALPHABET.length)]!;
+        if (targetChars.length > 0 && rng() < decoyRate) {
+          // Decoy letter from target words creates deceptive near-misses
+          grid[r]![c] = targetChars[Math.floor(rng() * targetChars.length)]!;
+        } else {
+          grid[r]![c] = ALPHABET[Math.floor(rng() * ALPHABET.length)]!;
+        }
       }
     }
   }
@@ -233,21 +286,22 @@ export function getRayCells(
     return [{ r: start.r, c: start.c }];
   }
 
-  // Determine angle and snap to nearest 45 degrees
   const angle = Math.atan2(dr, dc);
   const snappedStep = Math.round(angle / (Math.PI / 4));
   const stepR = Math.round(Math.sin((snappedStep * Math.PI) / 4));
   const stepC = Math.round(Math.cos((snappedStep * Math.PI) / 4));
 
-  // Determine length of ray
-  const dist = Math.max(Math.abs(dr), Math.abs(dc));
+  const maxDist = Math.max(Math.abs(dr), Math.abs(dc));
   const cells: GridPos[] = [];
 
-  for (let i = 0; i <= dist; i++) {
-    const curR = start.r + stepR * i;
-    const curC = start.c + stepC * i;
-    if (curR < 0 || curR >= size || curC < 0 || curC >= size) break;
-    cells.push({ r: curR, c: curC });
+  for (let dist = 0; dist <= maxDist; dist++) {
+    const curR = start.r + stepR * dist;
+    const curC = start.c + stepC * dist;
+    if (curR >= 0 && curR < size && curC >= 0 && curC < size) {
+      cells.push({ r: curR, c: curC });
+    } else {
+      break;
+    }
   }
 
   return cells;
@@ -257,43 +311,34 @@ export function updateSelection(
   state: WordSearchState,
   start: GridPos,
   current: GridPos,
-): void {
+): WordSelection {
   const cells = getRayCells(start, current, state.size);
   const currentWord = cells.map((cell) => state.grid[cell.r]![cell.c]!).join("");
-  state.activeSelection = {
+  const end = cells[cells.length - 1]!;
+  const selection: WordSelection = {
     start,
-    end: cells[cells.length - 1] ?? start,
+    end,
     cells,
     currentWord,
   };
+  state.activeSelection = selection;
+  return selection;
 }
 
-export function commitSelection(state: WordSearchState): PlacedWord | null {
-  if (!state.activeSelection) return null;
-  const selectedStr = state.activeSelection.currentWord;
-  const reversedStr = selectedStr.split("").reverse().join("");
+export function commitSelection(
+  state: WordSearchState,
+): PlacedWord | null {
+  if (!state.activeSelection) {
+    return null;
+  }
 
-  const start = state.activeSelection.start;
-  const end = state.activeSelection.end;
+  const spelled = state.activeSelection.currentWord;
+  const reversed = spelled.split("").reverse().join("");
 
+  // Check if spelled or reverse matches any un-found placed word
   let matchedWord: PlacedWord | null = null;
   for (const pw of state.placedWords) {
-    if (pw.found) continue;
-
-    // Check if word string matches and endpoints match
-    const stringMatches = pw.word === selectedStr || pw.word === reversedStr;
-    const directCoordsMatch =
-      (pw.start.r === start.r &&
-        pw.start.c === start.c &&
-        pw.end.r === end.r &&
-        pw.end.c === end.c) ||
-      (pw.start.r === end.r &&
-        pw.start.c === end.c &&
-        pw.end.r === start.r &&
-        pw.end.c === start.c);
-
-    if (stringMatches && directCoordsMatch) {
-      pw.found = true;
+    if (!pw.found && (pw.word === spelled || pw.word === reversed)) {
       matchedWord = pw;
       break;
     }
@@ -302,25 +347,32 @@ export function commitSelection(state: WordSearchState): PlacedWord | null {
   state.activeSelection = null;
 
   if (matchedWord) {
-    state.score += matchedWord.word.length * 100;
-    if (state.score > state.highScore) {
-      state.highScore = state.score;
-    }
-    // Check if all words are found
-    if (state.placedWords.every((w) => w.found)) {
+    matchedWord.found = true;
+    const wordScore = matchedWord.word.length * 100;
+    state.score += wordScore;
+
+    // Check if all words found
+    const allFound = state.placedWords.every((w) => w.found);
+    if (allFound) {
       state.isCompleted = true;
+      state.score += 500; // Bonus for clearing the grid
     }
+
+    return matchedWord;
   }
 
-  return matchedWord;
+  return null;
 }
 
 export function requestHint(state: WordSearchState): GridPos | null {
-  const unfound = state.placedWords.find((w) => !w.found);
-  if (!unfound) return null;
-  state.hintCell = unfound.start;
-  state.hintTimerMs = 3500;
-  return unfound.start;
+  const unfound = state.placedWords.filter((w) => !w.found);
+  if (unfound.length === 0) return null;
+
+  // Pick first unfound word and highlight its first cell
+  const target = unfound[0]!;
+  state.hintCell = target.start;
+  state.hintTimerMs = 3000;
+  return target.start;
 }
 
 export function tickWordSearch(state: WordSearchState, dtMs: number): void {

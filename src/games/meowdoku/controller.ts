@@ -49,8 +49,8 @@ export class MeowdokuController {
     this.arcadeSave = save;
     this.onArcadeSave = onSave;
 
-    // Start at level 1 or resume highest unlocked
-    const startLevel = 1;
+    // Start at highest unlocked level (resuming saved progress)
+    const startLevel = Math.max(1, save.best || 1);
     this.engine.newLevel(startLevel);
 
     this.renderDom();
@@ -70,7 +70,8 @@ export class MeowdokuController {
     this.saveData = saveData;
     this.onSave = onSave;
 
-    const startLevel = 1;
+    const currentHigh = saveData.arcadeHighScores?.["meowdoku"] ?? 1;
+    const startLevel = Math.max(1, currentHigh);
     this.engine.newLevel(startLevel);
 
     this.renderDom();
@@ -156,11 +157,12 @@ export class MeowdokuController {
   private resizeCanvas(): void {
     if (!this.canvas || !this.ctx) return;
     const dpr = window.devicePixelRatio || 1;
-    const size = Math.min(350, Math.floor(window.innerWidth * 0.92));
+    const size = Math.min(350, Math.floor(window.innerWidth * 0.92), Math.floor(window.innerHeight * 0.52));
     this.canvas.width = size * dpr;
     this.canvas.height = size * dpr;
     this.canvas.style.width = `${size}px`;
     this.canvas.style.height = `${size}px`;
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.ctx.scale(dpr, dpr);
   }
 
@@ -338,6 +340,8 @@ export class MeowdokuController {
       },
       { signal },
     );
+
+    window.addEventListener("resize", () => this.resizeCanvas(), { signal });
   }
 
   private getCellFromPointer(e: PointerEvent): { row: number; col: number } | null {
@@ -490,14 +494,14 @@ export class MeowdokuController {
   }
 
   private saveProgress(): void {
-    const score = this.engine.level;
+    const nextLevel = this.engine.level + 1;
     if (this.arcadeSave && this.onArcadeSave) {
-      if (score > this.arcadeSave.best) {
-        this.arcadeSave.best = score;
-        this.onArcadeSave({ best: score });
+      if (nextLevel > this.arcadeSave.best) {
+        this.arcadeSave.best = nextLevel;
+        this.onArcadeSave({ best: nextLevel });
       }
     } else if (this.saveData && this.onSave) {
-      const updated = recordHighScore(this.saveData, "meowdoku", score);
+      const updated = recordHighScore(this.saveData, "meowdoku", nextLevel);
       this.saveData = updated;
       this.onSave(updated);
     }
