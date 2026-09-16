@@ -5,6 +5,7 @@ import {
   generateWordGrid,
   getRayCells,
   requestHint,
+  setWordSearchDifficulty,
   updateSelection,
 } from "../src/games/wordsearch/engine";
 
@@ -112,6 +113,46 @@ describe("Neon Word Search Engine", () => {
     }
 
     expect(game.isCompleted).toBe(true);
+  });
+
+  it("requires the drag to cover the word's cells, not just spell it", () => {
+    const game = createWordSearchGame(1, 0, 8);
+    const target = game.placedWords[0]!;
+
+    // Spell the word correctly, then move the placed word elsewhere. The spelled
+    // string still matches, but the drag no longer covers that word's cells.
+    updateSelection(game, target.start, target.end);
+    expect(game.activeSelection!.currentWord).toBe(target.word);
+    target.start = { r: 0, c: 0 };
+    target.end = { r: 0, c: 0 };
+
+    expect(commitSelection(game)).toBeNull();
+    expect(target.found).toBe(false);
+  });
+
+  it("resets the score when the difficulty changes", () => {
+    const game = createWordSearchGame(1, 0, 8);
+    const target = game.placedWords[0]!;
+    updateSelection(game, target.start, target.end);
+    commitSelection(game);
+    expect(game.score).toBeGreaterThan(0);
+
+    setWordSearchDifficulty(game, "easy", () => 0.42);
+    expect(game.score).toBe(0);
+    expect(game.placedWords.every((w) => !w.found)).toBe(true);
+  });
+
+  it("clears the hint beacon when the hinted word is found", () => {
+    const game = createWordSearchGame(1, 0, 8);
+    const hinted = game.placedWords[0]!;
+    requestHint(game);
+    expect(game.hintCell).toEqual(hinted.start);
+
+    updateSelection(game, hinted.start, hinted.end);
+    commitSelection(game);
+
+    expect(game.hintCell).toBeNull();
+    expect(game.hintTimerMs).toBe(0);
   });
 
   it("scales grids and word lengths for easy, hard, and master difficulties", () => {

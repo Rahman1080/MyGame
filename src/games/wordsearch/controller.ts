@@ -31,6 +31,7 @@ export class WordSearchController {
   private saveData: SaveData | null = null;
   private arcadeSave: BasicScoreSave | null = null;
   private onArcadeSave: ((s: BasicScoreSave) => void) | null = null;
+  private onArcadeReport: ((s: BasicScoreSave) => void) | null = null;
   private abortController: AbortController | null = null;
 
   constructor() {
@@ -43,11 +44,13 @@ export class WordSearchController {
     onBack: () => void,
     save: BasicScoreSave,
     onSave: (s: BasicScoreSave) => void,
+    onReport?: (s: BasicScoreSave) => void,
   ): void {
     this.container = container;
     this.onBack = onBack;
     this.arcadeSave = save;
     this.onArcadeSave = onSave;
+    this.onArcadeReport = onReport ?? null;
 
     // Decouple level from high score (if save.best was high score > 50, start at level 1)
     const savedLvl =
@@ -89,7 +92,7 @@ export class WordSearchController {
 
     this.container.innerHTML = `
       <div class="shell enter">
-        <div class="hud">
+        <div class="hud" style="grid-template-columns: 44px 1fr 44px;">
           <button class="icon-btn" data-act="back" aria-label="Back to Arcade">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             <span>Hub</span>
@@ -108,7 +111,7 @@ export class WordSearchController {
         </div>
 
         <div style="display: flex; justify-content: center; margin: 2px 0 6px;">
-          <button class="ghost-btn" data-act="diff" id="ws-diff-btn" style="padding: 4px 14px; font-size: 11px; font-weight: 700; border: 1px solid rgba(0,255,163,0.35); border-radius: 14px; background: rgba(11,15,25,0.7); color: #00ffa3; cursor: pointer; letter-spacing: 0.05em;">
+          <button class="ghost-btn" data-act="diff" id="ws-diff-btn" style="min-height: 44px; display: inline-flex; align-items: center; padding: 4px 14px; font-size: 11px; font-weight: 700; border: 1px solid rgba(0,255,163,0.35); border-radius: 14px; background: rgba(11,15,25,0.7); color: #00ffa3; cursor: pointer; letter-spacing: 0.05em;">
             GRID: ${this.state.difficulty.toUpperCase()} (${this.state.size}x${this.state.size})
           </button>
         </div>
@@ -172,20 +175,28 @@ export class WordSearchController {
     }
   }
 
-  private checkSaveHighScore(): void {
+  /** Persists the high score / level. Reporting is a separate, win-only step. */
+  private persistScore(): BasicScoreSave {
     if (this.state.score > this.state.highScore) {
       this.state.highScore = this.state.score;
     }
+    let result: BasicScoreSave = {
+      best: this.state.highScore,
+      level: this.state.level,
+    };
     if (this.arcadeSave && this.onArcadeSave) {
       const best = Math.max(this.arcadeSave.best ?? 0, this.state.score);
+      const level = Math.max(this.arcadeSave.level ?? 1, this.state.level);
       this.arcadeSave.best = best;
-      this.arcadeSave.level = Math.max(this.arcadeSave.level ?? 1, this.state.level);
-      this.onArcadeSave({ best, level: this.arcadeSave.level });
+      this.arcadeSave.level = level;
+      result = { best, level };
+      this.onArcadeSave(result);
     } else if (this.saveData && this.onSave) {
       const updated = recordHighScore(this.saveData, "wordsearch", this.state.score);
       this.saveData = updated;
       this.onSave(updated);
     }
+    return result;
   }
 
   private setupListeners(): void {
@@ -297,7 +308,7 @@ export class WordSearchController {
         if (res) {
           synth.combo();
           hapticTap();
-          this.checkSaveHighScore();
+          const saved = this.persistScore();
           this.updateWordListDom();
 
           const scoreEl = this.container?.querySelector("#ws-score");
@@ -306,6 +317,8 @@ export class WordSearchController {
           if (highEl) highEl.textContent = this.state.highScore.toString();
 
           if (this.state.isCompleted) {
+            // Report exactly once, when the board is cleared.
+            this.onArcadeReport?.(saved);
             synth.star();
             if (this.canvas) {
               const dpr = window.devicePixelRatio || 1;
@@ -314,7 +327,6 @@ export class WordSearchController {
                 this.canvas.height / dpr,
               );
             }
-            this.checkSaveHighScore();
             const modal = this.container?.querySelector<HTMLElement>("#ws-winmodal");
             const stats = this.container?.querySelector<HTMLElement>("#ws-final-stats");
             if (modal) modal.style.display = "flex";

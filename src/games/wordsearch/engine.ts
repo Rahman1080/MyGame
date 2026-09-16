@@ -170,6 +170,7 @@ export function setWordSearchDifficulty(
   state.hintCell = null;
   state.hintTimerMs = 0;
   state.isCompleted = false;
+  state.score = 0;
   state.trickiness = getTrickinessLabel(state.level);
 }
 
@@ -332,13 +333,27 @@ export function commitSelection(
     return null;
   }
 
-  const spelled = state.activeSelection.currentWord;
+  const sel = state.activeSelection;
+  const spelled = sel.currentWord;
   const reversed = spelled.split("").reverse().join("");
 
-  // Check if spelled or reverse matches any un-found placed word
+  // A word only counts when the drag actually covers that word's cells. Matching
+  // on the spelled string alone credited coincidental decoy occurrences and
+  // drew the found capsule somewhere the player never dragged.
+  const endpointsMatch = (pw: PlacedWord): boolean =>
+    (sel.start.r === pw.start.r &&
+      sel.start.c === pw.start.c &&
+      sel.end.r === pw.end.r &&
+      sel.end.c === pw.end.c) ||
+    (sel.start.r === pw.end.r &&
+      sel.start.c === pw.end.c &&
+      sel.end.r === pw.start.r &&
+      sel.end.c === pw.start.c);
+
   let matchedWord: PlacedWord | null = null;
   for (const pw of state.placedWords) {
-    if (!pw.found && (pw.word === spelled || pw.word === reversed)) {
+    if (pw.found) continue;
+    if (endpointsMatch(pw) && (pw.word === spelled || pw.word === reversed)) {
       matchedWord = pw;
       break;
     }
@@ -350,6 +365,16 @@ export function commitSelection(
     matchedWord.found = true;
     const wordScore = matchedWord.word.length * 100;
     state.score += wordScore;
+
+    // Retire the hint beacon if it was pointing at the word just solved.
+    if (
+      state.hintCell &&
+      state.hintCell.r === matchedWord.start.r &&
+      state.hintCell.c === matchedWord.start.c
+    ) {
+      state.hintCell = null;
+      state.hintTimerMs = 0;
+    }
 
     // Check if all words found
     const allFound = state.placedWords.every((w) => w.found);
