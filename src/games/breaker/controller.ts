@@ -20,13 +20,16 @@ export class BreakerController {
   private ctx: CanvasRenderingContext2D | null = null;
   private animId = 0;
   private lastTime = 0;
+  private keysHeld: Record<string, boolean> = {};
   private onBack: (() => void) | null = null;
   private onSave: ((s: SaveData) => void) | null = null;
   private saveData: SaveData | null = null;
-  private keysHeld: Record<string, boolean> = {};
+  private targetPaddleCenterX: number;
+  private freezeFrames = 0;
 
   constructor() {
     this.state = createBreakerGame(360, 480, 0);
+    this.targetPaddleCenterX = 180;
     this.renderer = new BreakerRenderer();
   }
 
@@ -39,6 +42,7 @@ export class BreakerController {
     this.container = container;
     this.onBack = onBack;
     this.state = createBreakerGame(360, 480, save.best ?? 0);
+    this.targetPaddleCenterX = this.state.paddleX + this.state.paddleWidth / 2;
     this.renderDom();
     this.setupListeners();
     this.onSave = () => {
@@ -63,6 +67,7 @@ export class BreakerController {
 
     const currentHigh = saveData.arcadeHighScores?.["breaker"] ?? 0;
     this.state = createBreakerGame(360, 480, currentHigh);
+    this.targetPaddleCenterX = this.state.paddleX + this.state.paddleWidth / 2;
 
     this.renderDom();
     this.setupListeners();
@@ -81,7 +86,7 @@ export class BreakerController {
           <div class="center-meta">
             <div class="lvl">NEON BREAKER</div>
             <div class="par">SCORE <b id="breaker-score">0</b> · HIGH <b id="breaker-high">${this.state.highScore}</b></div>
-            <div class="par-sub" id="breaker-status">WAVE 1 · LIVES: 3</div>
+            <div class="par-sub" id="breaker-status">WAVE 1 · LIVES: ❤️❤️❤️</div>
           </div>
           <button class="icon-btn" data-act="pause" aria-label="Pause game">
             <span id="breaker-pause-txt">Pause</span>
@@ -89,7 +94,7 @@ export class BreakerController {
         </div>
 
         <div class="board-wrap" style="align-items: center; justify-content: center; position: relative;">
-          <canvas id="breaker-canvas" width="360" height="480" style="touch-action: none; border-radius: 12px; max-width: 92vw; max-height: 58vh;"></canvas>
+          <canvas id="breaker-canvas" width="360" height="480" style="touch-action: none; border-radius: 10px; max-width: 94vw; max-height: 56vh; cursor: ew-resize;"></canvas>
           <div id="breaker-gameover" class="overlay" style="display: none;">
             <div class="win-card">
               <h2>GAME OVER</h2>
@@ -163,13 +168,13 @@ export class BreakerController {
       }
     });
 
-    // Pointer / touch steering on canvas
+    // Continuous pointer tracking across canvas
     if (this.canvas) {
       const handlePointer = (clientX: number): void => {
         if (!this.canvas) return;
         const rect = this.canvas.getBoundingClientRect();
         const normX = (clientX - rect.left) / rect.width;
-        movePaddle(this.state, normX * 360);
+        this.targetPaddleCenterX = normX * 360;
       };
 
       this.canvas.addEventListener("pointerdown", (e) => {
@@ -184,9 +189,7 @@ export class BreakerController {
       });
 
       this.canvas.addEventListener("pointermove", (e) => {
-        if (e.buttons > 0 || !this.state.launched) {
-          handlePointer(e.clientX);
-        }
+        handlePointer(e.clientX);
       });
     }
 
@@ -216,6 +219,7 @@ export class BreakerController {
   private restart(): void {
     const currentHigh = this.saveData?.arcadeHighScores?.["breaker"] ?? this.state.highScore;
     this.state = createBreakerGame(360, 480, currentHigh);
+    this.targetPaddleCenterX = this.state.paddleX + this.state.paddleWidth / 2;
     const go = this.container?.querySelector<HTMLElement>("#breaker-gameover");
     if (go) go.style.display = "none";
   }
@@ -228,33 +232,59 @@ export class BreakerController {
 
       // Handle paddle key movement
       if (this.keysHeld["ArrowLeft"] || this.keysHeld["a"] || this.keysHeld["A"]) {
-        movePaddle(this.state, this.state.paddleX + this.state.paddleWidth / 2 - 8);
+        this.targetPaddleCenterX = Math.max(
+          this.state.paddleWidth / 2,
+          this.targetPaddleCenterX - 10,
+        );
       }
       if (this.keysHeld["ArrowRight"] || this.keysHeld["d"] || this.keysHeld["D"]) {
-        movePaddle(this.state, this.state.paddleX + this.state.paddleWidth / 2 + 8);
+        this.targetPaddleCenterX = Math.min(
+          360 - this.state.paddleWidth / 2,
+          this.targetPaddleCenterX + 10,
+        );
       }
 
-      const events = tickBreaker(this.state, dt);
+      // Smooth paddle interpolation
+      const curCenter = this.state.paddleX + this.state.paddleWidth / 2;
+      const smoothedCenter = curCenter + (this.targetPaddleCenterX - curCenter) * 0.42;
+      movePaddle(this.state, smoothedCenter, dt / 1000);
 
-      if (events.paddleHit || events.wallHit) {
-        synth.bounce();
-      }
-      if (events.brickHit) {
-        synth.step();
-      }
-      if (events.brickDestroyed && events.destroyedBrick) {
-        synth.explosion();
-        hapticTap();
-        this.renderer.emitBrickShatter(events.destroyedBrick);
-      }
-      if (events.powerUpCollected) {
-        synth.powerup();
-      }
-      if (events.waveCleared) {
-        synth.star();
-      }
-      if (events.lostLife) {
-        synth.fail();
+      // Hit-stop micro-pause
+      if (this.freezeFrames > 0) {
+        this.freezeFrames--;
+      } else {
+        const events = tickBreaker(this.state, dt);
+
+        if (events.paddleHit || events.wallHit) {
+          synth.bounce();
+        }
+        if (events.brickHit) {
+          synth.step();
+        }
+        if (events.brickDestroyed && events.destroyedBrick) {
+          synth.explosion();
+          hapticTap();
+          this.freezeFrames = 1; // 1-frame impact hit-stop
+          this.renderer.triggerShake(4, 0.18);
+          this.renderer.emitBrickShatter(events.destroyedBrick);
+
+          if (events.combo > 1) {
+            synth.combo();
+            const bx = events.destroyedBrick.x + events.destroyedBrick.width / 2;
+            const by = events.destroyedBrick.y + events.destroyedBrick.height / 2;
+            this.renderer.emitFloatingText(bx, by, `COMBO x${events.combo}!`, "#FFD700");
+          }
+        }
+        if (events.powerUpCollected) {
+          synth.powerup();
+        }
+        if (events.waveCleared) {
+          synth.star();
+        }
+        if (events.lostLife) {
+          synth.fail();
+          this.renderer.triggerShake(9, 0.35);
+        }
       }
 
       if (this.state.gameOver) {
@@ -277,7 +307,10 @@ export class BreakerController {
       const actionBtn = this.container?.querySelector<HTMLButtonElement>("#breaker-action-btn");
       if (scoreEl) scoreEl.textContent = this.state.score.toString();
       if (highEl) highEl.textContent = this.state.highScore.toString();
-      if (statusEl) statusEl.textContent = `WAVE ${this.state.wave} · LIVES: ${"❤️".repeat(Math.max(0, this.state.lives))}`;
+      if (statusEl) {
+        const comboBadge = this.state.combo > 1 ? ` · ⚡ COMBO x${this.state.combo}` : "";
+        statusEl.textContent = `WAVE ${this.state.wave} · LIVES: ${"❤️".repeat(Math.max(0, this.state.lives))}${comboBadge}`;
+      }
 
       if (actionBtn) {
         if (!this.state.launched) {
@@ -292,9 +325,9 @@ export class BreakerController {
         }
       }
 
-      // Render
+      // Render canvas
       if (this.ctx && this.canvas) {
-        this.renderer.updateParticles(dt / 1000);
+        this.renderer.update(dt / 1000, this.state);
         this.renderer.render(this.ctx, this.state, 360, 480, now);
       }
 

@@ -11,29 +11,94 @@ export interface BreakerParticle {
   maxLife: number;
 }
 
+export interface BreakerFloatingText {
+  x: number;
+  y: number;
+  text: string;
+  color: string;
+  life: number;
+  maxLife: number;
+}
+
+export interface BallTrailPoint {
+  x: number;
+  y: number;
+  radius: number;
+  alpha: number;
+}
+
 export class BreakerRenderer {
   private particles: BreakerParticle[] = [];
+  private floatingTexts: BreakerFloatingText[] = [];
+  private ballTrails: BallTrailPoint[] = [];
+  private shakeTimer = 0;
+  private shakeIntensity = 0;
 
-  emitBrickShatter(brick: Brick, count = 12): void {
+  triggerShake(intensity = 6, duration = 0.25): void {
+    this.shakeIntensity = intensity;
+    this.shakeTimer = duration;
+  }
+
+  emitFloatingText(x: number, y: number, text: string, color = "#00F2FF"): void {
+    this.floatingTexts.push({
+      x,
+      y,
+      text,
+      color,
+      life: 0,
+      maxLife: 0.8,
+    });
+  }
+
+  emitBrickShatter(brick: Brick, count = 16): void {
     const cx = brick.x + brick.width / 2;
     const cy = brick.y + brick.height / 2;
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = 60 + Math.random() * 120;
+      const speed = 60 + Math.random() * 140;
       this.particles.push({
         x: cx + (Math.random() - 0.5) * brick.width * 0.6,
         y: cy + (Math.random() - 0.5) * brick.height * 0.6,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
         color: brick.color,
-        size: 2.5 + Math.random() * 2.5,
+        size: 2.5 + Math.random() * 3,
         life: 0,
-        maxLife: 0.35 + Math.random() * 0.25,
+        maxLife: 0.38 + Math.random() * 0.25,
       });
     }
   }
 
-  updateParticles(dtSeconds: number): void {
+  update(dtSeconds: number, state?: BreakerGameState): void {
+    if (this.shakeTimer > 0) {
+      this.shakeTimer = Math.max(0, this.shakeTimer - dtSeconds);
+    }
+
+    // Record ball trails
+    if (state && state.launched) {
+      for (const b of state.balls) {
+        this.ballTrails.push({
+          x: b.x,
+          y: b.y,
+          radius: b.radius * 0.85,
+          alpha: 0.6,
+        });
+      }
+    }
+
+    // Decay ball trails
+    for (let i = this.ballTrails.length - 1; i >= 0; i--) {
+      const bt = this.ballTrails[i]!;
+      bt.alpha -= dtSeconds * 3.5;
+      if (bt.alpha <= 0) {
+        this.ballTrails.splice(i, 1);
+      }
+    }
+    if (this.ballTrails.length > 40) {
+      this.ballTrails.splice(0, this.ballTrails.length - 40);
+    }
+
+    // Particles
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i]!;
       p.life += dtSeconds;
@@ -43,8 +108,19 @@ export class BreakerRenderer {
       }
       p.x += p.vx * dtSeconds;
       p.y += p.vy * dtSeconds;
-      p.vx *= 0.96;
-      p.vy *= 0.96;
+      p.vx *= 0.95;
+      p.vy *= 0.95;
+    }
+
+    // Floating text
+    for (let i = this.floatingTexts.length - 1; i >= 0; i--) {
+      const ft = this.floatingTexts[i]!;
+      ft.life += dtSeconds;
+      if (ft.life >= ft.maxLife) {
+        this.floatingTexts.splice(i, 1);
+        continue;
+      }
+      ft.y -= 26 * dtSeconds;
     }
   }
 
@@ -53,7 +129,7 @@ export class BreakerRenderer {
     state: BreakerGameState,
     width: number,
     height: number,
-    _now: number,
+    now: number,
   ): void {
     ctx.save();
     ctx.clearRect(0, 0, width, height);
@@ -62,10 +138,31 @@ export class BreakerRenderer {
     ctx.fillStyle = "#07080D";
     ctx.fillRect(0, 0, width, height);
 
+    // Screen shake
+    if (this.shakeTimer > 0) {
+      const currentIntensity = this.shakeIntensity * (this.shakeTimer / 0.25);
+      const ox = (Math.random() - 0.5) * 2 * currentIntensity;
+      const oy = (Math.random() - 0.5) * 2 * currentIntensity;
+      ctx.translate(ox, oy);
+    }
+
     // Playfield border
     ctx.strokeStyle = "rgba(41, 221, 244, 0.25)";
     ctx.lineWidth = 2;
     ctx.strokeRect(1, 1, width - 2, height - 2);
+
+    // Ball neon trails
+    for (const bt of this.ballTrails) {
+      ctx.save();
+      ctx.globalAlpha = bt.alpha * 0.45;
+      ctx.fillStyle = "#00F2FF";
+      ctx.shadowColor = "#00F2FF";
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.arc(bt.x, bt.y, bt.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
 
     // Bricks
     for (const b of state.bricks) {
@@ -73,7 +170,7 @@ export class BreakerRenderer {
       ctx.shadowColor = b.color;
       ctx.shadowBlur = 8;
       ctx.fillStyle = b.color;
-      ctx.globalAlpha = b.hitsLeft === 1 ? 0.85 : 1;
+      ctx.globalAlpha = b.hitsLeft === 1 && b.maxHits > 1 ? 0.75 : 0.95;
 
       ctx.beginPath();
       ctx.roundRect(b.x, b.y, b.width, b.height, 4);
@@ -85,10 +182,26 @@ export class BreakerRenderer {
       ctx.lineWidth = 1.2;
       ctx.stroke();
 
+      // Draw neon crack fissure if damaged
+      if (b.hitsLeft < b.maxHits) {
+        ctx.save();
+        ctx.strokeStyle = "#FFFFFF";
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = "#FFFFFF";
+        ctx.shadowBlur = 4;
+        ctx.beginPath();
+        ctx.moveTo(b.x + b.width * 0.2, b.y);
+        ctx.lineTo(b.x + b.width * 0.4, b.y + b.height * 0.55);
+        ctx.lineTo(b.x + b.width * 0.35, b.y + b.height * 0.7);
+        ctx.lineTo(b.x + b.width * 0.7, b.y + b.height);
+        ctx.stroke();
+        ctx.restore();
+      }
+
       // Power-up indicator symbol
       if (b.powerUp) {
         ctx.fillStyle = "#FFFFFF";
-        ctx.globalAlpha = 0.9;
+        ctx.globalAlpha = 0.95;
         ctx.font = "bold 9px monospace";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
@@ -103,12 +216,14 @@ export class BreakerRenderer {
     for (const p of state.powerUps) {
       ctx.save();
       const color = p.type === "multiball" ? "#FF007F" : p.type === "laser" ? "#FFD700" : "#00F2FF";
+      const pulse = 1 + Math.sin(now / 120) * 0.12;
       ctx.fillStyle = color;
       ctx.shadowColor = color;
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 12;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 9 * pulse, 0, Math.PI * 2);
       ctx.fill();
+
       ctx.fillStyle = "#FFFFFF";
       ctx.font = "bold 9px monospace";
       ctx.textAlign = "center";
@@ -124,7 +239,7 @@ export class BreakerRenderer {
       ctx.fillStyle = "#FFD700";
       ctx.shadowColor = "#FF8C00";
       ctx.shadowBlur = 8;
-      ctx.fillRect(l.x - 2, l.y, 4, 12);
+      ctx.fillRect(l.x - 2, l.y, 4, 14);
       ctx.restore();
     }
 
@@ -150,7 +265,7 @@ export class BreakerRenderer {
       ctx.save();
       ctx.fillStyle = "#00F2FF";
       ctx.shadowColor = "#00F2FF";
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 14;
       ctx.beginPath();
       ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
       ctx.fill();
@@ -158,7 +273,7 @@ export class BreakerRenderer {
       // Ball core
       ctx.fillStyle = "#FFFFFF";
       ctx.beginPath();
-      ctx.arc(b.x, b.y, b.radius * 0.4, 0, Math.PI * 2);
+      ctx.arc(b.x, b.y, b.radius * 0.45, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }
@@ -174,6 +289,23 @@ export class BreakerRenderer {
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
       ctx.fill();
+      ctx.restore();
+    }
+
+    // Floating text
+    for (const ft of this.floatingTexts) {
+      const progress = ft.life / ft.maxLife;
+      const alpha = Math.max(0, 1 - progress);
+      const scale = 1 + progress * 0.2;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = ft.color;
+      ctx.shadowColor = ft.color;
+      ctx.shadowBlur = 8;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `bold ${Math.floor(13 * scale)}px "JetBrains Mono", monospace`;
+      ctx.fillText(ft.text, ft.x, ft.y);
       ctx.restore();
     }
 

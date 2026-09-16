@@ -17,12 +17,22 @@ export interface ActivePowerUp {
   remainingMs: number;
 }
 
+export type SpeedMode = "chill" | "normal" | "hyper";
+
+export const SPEED_INTERVALS: Record<SpeedMode, number> = {
+  chill: 200,
+  normal: 165,
+  hyper: 125,
+};
+
 export interface SnakeGameState {
   width: number;
   height: number;
   snake: SnakeSegment[];
+  prevSnake: SnakeSegment[];
   dir: SnakeSegment;
   nextDir: SnakeSegment;
+  inputQueue: SnakeSegment[];
   food: FoodItem | null;
   score: number;
   highScore: number;
@@ -33,25 +43,32 @@ export interface SnakeGameState {
   activePowerUp: ActivePowerUp | null;
   moveTimerMs: number;
   baseIntervalMs: number;
+  currentIntervalMs: number;
+  speedMode: SpeedMode;
 }
 
 export function createSnakeGame(
   width = 20,
   height = 20,
   highScore = 0,
+  speedMode: SpeedMode = "normal",
 ): SnakeGameState {
   const midX = Math.floor(width / 2);
   const midY = Math.floor(height / 2);
+  const initialSegments: SnakeSegment[] = [
+    { x: midX, y: midY },
+    { x: midX - 1, y: midY },
+    { x: midX - 2, y: midY },
+  ];
+  const baseInterval = SPEED_INTERVALS[speedMode];
   const state: SnakeGameState = {
     width,
     height,
-    snake: [
-      { x: midX, y: midY },
-      { x: midX - 1, y: midY },
-      { x: midX - 2, y: midY },
-    ],
+    snake: initialSegments.map((s) => ({ ...s })),
+    prevSnake: initialSegments.map((s) => ({ ...s })),
     dir: { x: 1, y: 0 },
     nextDir: { x: 1, y: 0 },
+    inputQueue: [],
     food: null,
     score: 0,
     highScore,
@@ -61,20 +78,48 @@ export function createSnakeGame(
     paused: false,
     activePowerUp: null,
     moveTimerMs: 0,
-    baseIntervalMs: 120,
+    baseIntervalMs: baseInterval,
+    currentIntervalMs: baseInterval,
+    speedMode,
   };
   state.food = spawnFood(state);
   return state;
 }
 
+export function setSpeedMode(state: SnakeGameState, mode: SpeedMode): void {
+  state.speedMode = mode;
+  state.baseIntervalMs = SPEED_INTERVALS[mode];
+}
+
 export function setDirection(state: SnakeGameState, dir: SnakeSegment): boolean {
   if (!state.alive || state.paused) return false;
-  // Cannot turn directly back on yourself
-  if (dir.x + state.dir.x === 0 && dir.y + state.dir.y === 0) {
+  const targetDir = { x: Math.sign(dir.x), y: Math.sign(dir.y) };
+  if (targetDir.x === 0 && targetDir.y === 0) return false;
+
+  // Check against the last queued direction, or current active direction
+  const referenceDir =
+    state.inputQueue.length > 0
+      ? state.inputQueue[state.inputQueue.length - 1]!
+      : state.dir;
+
+  // Cannot turn directly opposite
+  if (targetDir.x + referenceDir.x === 0 && targetDir.y + referenceDir.y === 0) {
     return false;
   }
-  state.nextDir = { x: Math.sign(dir.x), y: Math.sign(dir.y) };
-  return true;
+  // Cannot queue the exact same direction again
+  if (targetDir.x === referenceDir.x && targetDir.y === referenceDir.y) {
+    return false;
+  }
+
+  // Queue up to 2 directions for smooth double-turning
+  if (state.inputQueue.length < 2) {
+    state.inputQueue.push(targetDir);
+    if (state.inputQueue.length === 1) {
+      state.nextDir = targetDir;
+    }
+    return true;
+  }
+  return false;
 }
 
 export function spawnFood(state: SnakeGameState, rng = Math.random): FoodItem | null {
@@ -114,6 +159,9 @@ export interface SnakeStepResult {
   foodType?: "energy" | PowerUpType;
   died: boolean;
   scoreGained: number;
+  ateX?: number;
+  ateY?: number;
+  combo?: number;
 }
 
 export function tickSnake(state: SnakeGameState, dt: number): SnakeStepResult {
@@ -148,9 +196,10 @@ export function tickSnake(state: SnakeGameState, dt: number): SnakeStepResult {
   if (state.activePowerUp?.type === "slowmo") {
     speedMultiplier = 0.65;
   }
-  // Snake gently speeds up as it grows
-  const speedBonus = Math.min(40, state.snake.length * 1.5);
-  const interval = (state.baseIntervalMs - speedBonus) / speedMultiplier;
+  // Snake gently speeds up as it grows, capped at 25ms for comfortable pacing
+  const speedBonus = Math.min(25, state.snake.length * 0.8);
+  const interval = Math.max(90, (state.baseIntervalMs - speedBonus) / speedMultiplier);
+  state.currentIntervalMs = interval;
 
   state.moveTimerMs += dt;
   if (state.moveTimerMs < interval) {
@@ -158,6 +207,14 @@ export function tickSnake(state: SnakeGameState, dt: number): SnakeStepResult {
   }
   state.moveTimerMs -= interval;
   result.moved = true;
+
+  // Capture previous positions for smooth visual interpolation
+  state.prevSnake = state.snake.map((s) => ({ ...s }));
+
+  // Consume next turn from input queue if queued
+  if (state.inputQueue.length > 0) {
+    state.nextDir = state.inputQueue.shift()!;
+  }
 
   state.dir = { ...state.nextDir };
   const head = state.snake[0]!;

@@ -17,6 +17,8 @@ export class MatrixController {
   private container: HTMLElement | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private ctx: CanvasRenderingContext2D | null = null;
+  private animId = 0;
+  private lastTime = 0;
   private touchStartX = 0;
   private touchStartY = 0;
   private onBack: (() => void) | null = null;
@@ -45,7 +47,7 @@ export class MatrixController {
         onSave({ best: save.best });
       }
     };
-    this.paint();
+    this.startLoop();
   }
 
   mount(
@@ -64,7 +66,7 @@ export class MatrixController {
 
     this.renderDom();
     this.setupListeners();
-    this.paint();
+    this.startLoop();
   }
 
   private renderDom(): void {
@@ -81,14 +83,14 @@ export class MatrixController {
             <div class="par">SCORE <b id="matrix-score">0</b> · HIGH <b id="matrix-high">${this.state.highScore}</b></div>
             <div class="par-sub">SYNTHESIZE TILES TO 2048</div>
           </div>
-          <button class="icon-btn" data-act="undo" aria-label="Undo move">
+          <button class="icon-btn" data-act="undo" id="matrix-undo-btn" aria-label="Undo move">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
-            <span>Undo</span>
+            <span id="matrix-undo-text">Undo</span>
           </button>
         </div>
 
         <div class="board-wrap" style="align-items: center; justify-content: center; position: relative;">
-          <canvas id="matrix-canvas" width="340" height="340" style="touch-action: none; border-radius: 12px; max-width: 92vw; max-height: 54vh;"></canvas>
+          <canvas id="matrix-canvas" width="340" height="340" style="touch-action: none; border-radius: 12px; max-width: 92vw; max-height: 52vh;"></canvas>
           <div id="matrix-gameover" class="overlay" style="display: none;">
             <div class="win-card">
               <h2 id="matrix-modal-title">GAME OVER</h2>
@@ -102,7 +104,7 @@ export class MatrixController {
         </div>
 
         <!-- On-screen Swipe/Arrow Controls for Mobile -->
-        <div class="dpad-wrap" style="display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 12px;">
+        <div class="dpad-wrap" style="display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 10px;">
           <button class="dpad-btn" data-dir="up" aria-label="Up">▲</button>
           <div style="display: flex; gap: 20px;">
             <button class="dpad-btn" data-dir="left" aria-label="Left">◀</button>
@@ -145,7 +147,7 @@ export class MatrixController {
       if (target.dataset.act === "undo") {
         synth.tap();
         if (undoMatrix(this.state)) {
-          this.paint();
+          this.updateHud();
         }
         return;
       }
@@ -164,29 +166,37 @@ export class MatrixController {
 
     // Touch swipe handling
     if (this.canvas) {
-      this.canvas.addEventListener("touchstart", (e) => {
-        const touch = e.touches[0];
-        if (!touch) return;
-        this.touchStartX = touch.clientX;
-        this.touchStartY = touch.clientY;
-      }, { passive: true });
+      this.canvas.addEventListener(
+        "touchstart",
+        (e) => {
+          const touch = e.touches[0];
+          if (!touch) return;
+          this.touchStartX = touch.clientX;
+          this.touchStartY = touch.clientY;
+        },
+        { passive: true },
+      );
 
-      this.canvas.addEventListener("touchend", (e) => {
-        const touch = e.changedTouches[0];
-        if (!touch) return;
-        const dx = touch.clientX - this.touchStartX;
-        const dy = touch.clientY - this.touchStartY;
-        const absX = Math.abs(dx);
-        const absY = Math.abs(dy);
+      this.canvas.addEventListener(
+        "touchend",
+        (e) => {
+          const touch = e.changedTouches[0];
+          if (!touch) return;
+          const dx = touch.clientX - this.touchStartX;
+          const dy = touch.clientY - this.touchStartY;
+          const absX = Math.abs(dx);
+          const absY = Math.abs(dy);
 
-        if (Math.max(absX, absY) > 28) {
-          if (absX > absY) {
-            this.handleMove(dx > 0 ? "right" : "left");
-          } else {
-            this.handleMove(dy > 0 ? "down" : "up");
+          if (Math.max(absX, absY) > 24) {
+            if (absX > absY) {
+              this.handleMove(dx > 0 ? "right" : "left");
+            } else {
+              this.handleMove(dy > 0 ? "down" : "up");
+            }
           }
-        }
-      }, { passive: true });
+        },
+        { passive: true },
+      );
     }
 
     // Keyboard
@@ -206,23 +216,59 @@ export class MatrixController {
     } else if (e.key === "ArrowRight" || e.key === "d" || e.key === "D") {
       e.preventDefault();
       this.handleMove("right");
-    } else if (e.key === "u" || e.key === "U") {
+    } else if (e.key === "u" || e.key === "U" || e.key === "z" || e.key === "Z") {
       e.preventDefault();
       synth.tap();
-      if (undoMatrix(this.state)) this.paint();
+      if (undoMatrix(this.state)) this.updateHud();
     }
   };
 
   private handleMove(dir: MatrixDirection): void {
+    const prevGrid = this.state.grid.map((row) => [...row]);
     const res = moveMatrix(this.state, dir);
+
     if (res.moved) {
       synth.step();
       hapticTap();
+
+      // Check merged tiles and trigger animations
+      if (this.canvas) {
+        const dpr = window.devicePixelRatio || 1;
+        const w = this.canvas.width / dpr;
+        const h = this.canvas.height / dpr;
+        const pad = 12;
+        const size = Math.min(w, h) - pad * 2;
+        const gap = 8;
+        const cellSize = (size - gap * (this.state.size + 1)) / this.state.size;
+        const startX = (w - size) / 2;
+        const startY = (h - size) / 2;
+
+        for (let r = 0; r < this.state.size; r++) {
+          for (let c = 0; c < this.state.size; c++) {
+            const currentVal = this.state.grid[r]?.[c];
+            const prevVal = prevGrid[r]?.[c];
+            // If the tile grew in value, it's a merge
+            if (currentVal && prevVal && currentVal > prevVal) {
+              const cx = startX + gap + c * (cellSize + gap) + cellSize / 2;
+              const cy = startY + gap + r * (cellSize + gap) + cellSize / 2;
+              this.renderer.triggerMerge(r, c, currentVal, cx, cy);
+            }
+          }
+        }
+
+        // Trigger spawn pop
+        if (res.spawnedTile) {
+          this.renderer.triggerSpawn(res.spawnedTile.r, res.spawnedTile.c);
+        }
+      }
+
       if (res.mergedValues.length > 0) {
         synth.combo();
       }
+
       if (res.reached2048) {
         synth.star();
+        this.renderer.triggerShake(10, 0.4);
       }
 
       if (res.isGameOver) {
@@ -240,7 +286,7 @@ export class MatrixController {
         if (stats) stats.textContent = `SCORE: ${this.state.score} · BEST: ${this.state.highScore}`;
       }
 
-      this.paint();
+      this.updateHud();
     }
   }
 
@@ -249,26 +295,47 @@ export class MatrixController {
     this.state = createMatrixGame(4, currentHigh);
     const go = this.container?.querySelector<HTMLElement>("#matrix-gameover");
     if (go) go.style.display = "none";
-    this.paint();
+    this.updateHud();
   }
 
-  private paint(): void {
-    // Update HUD
+  private updateHud(): void {
     const scoreEl = this.container?.querySelector("#matrix-score");
     const highEl = this.container?.querySelector("#matrix-high");
+    const undoText = this.container?.querySelector("#matrix-undo-text");
     if (scoreEl) scoreEl.textContent = this.state.score.toString();
     if (highEl) highEl.textContent = this.state.highScore.toString();
-
-    // Render canvas
-    if (this.ctx && this.canvas) {
-      const dpr = window.devicePixelRatio || 1;
-      const w = this.canvas.width / dpr;
-      const h = this.canvas.height / dpr;
-      this.renderer.render(this.ctx, this.state, w, h);
+    if (undoText) {
+      const remaining = this.state.history.length;
+      undoText.textContent = remaining > 0 ? `Undo (${remaining})` : "Undo";
     }
   }
 
+  private startLoop(): void {
+    this.lastTime = performance.now();
+    const loop = (now: number): void => {
+      const dt = Math.min(50, now - this.lastTime);
+      this.lastTime = now;
+
+      this.renderer.update(dt / 1000);
+
+      if (this.ctx && this.canvas) {
+        const dpr = window.devicePixelRatio || 1;
+        const w = this.canvas.width / dpr;
+        const h = this.canvas.height / dpr;
+        this.renderer.render(this.ctx, this.state, w, h);
+      }
+
+      this.animId = requestAnimationFrame(loop);
+    };
+
+    this.animId = requestAnimationFrame(loop);
+  }
+
   destroy(): void {
+    if (this.animId) {
+      cancelAnimationFrame(this.animId);
+      this.animId = 0;
+    }
     window.removeEventListener("keydown", this.handleKeyDown);
     if (this.container) {
       this.container.innerHTML = "";

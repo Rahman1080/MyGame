@@ -73,5 +73,21 @@ describe("Neon Breaker Engine", () => {
     expect(events.brickDestroyed).toBe(true);
     expect(game.bricks.length).toBe(initialBrickCount - 1);
     expect(game.score).toBeGreaterThan(0);
+    expect(game.combo).toBe(1);
+  });
+
+  it("resets combo when ball hits paddle", () => {
+    const game = createBreakerGame(360, 480);
+    game.launched = true;
+    game.combo = 4;
+    const b = game.balls[0]!;
+    b.x = game.paddleX + game.paddleWidth / 2;
+    b.y = game.paddleY - b.radius + 1;
+    b.vx = 0;
+    b.vy = 100;
+
+    const events = tickBreaker(game, 20);
+    expect(events.paddleHit).toBe(true);
+    expect(game.combo).toBe(0);
   });
 });

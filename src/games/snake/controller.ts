@@ -5,8 +5,10 @@ import type { SaveData } from "../../save/schema";
 import {
   createSnakeGame,
   setDirection,
+  setSpeedMode,
   tickSnake,
   type SnakeGameState,
+  type SpeedMode,
 } from "./engine";
 import { SnakeRenderer } from "./render";
 
@@ -25,7 +27,7 @@ export class SnakeController {
   private saveData: SaveData | null = null;
 
   constructor() {
-    this.state = createSnakeGame(20, 20, 0);
+    this.state = createSnakeGame(20, 20, 0, "normal");
     this.renderer = new SnakeRenderer();
   }
 
@@ -37,7 +39,7 @@ export class SnakeController {
   ): void {
     this.container = container;
     this.onBack = onBack;
-    this.state = createSnakeGame(20, 20, save.best ?? 0);
+    this.state = createSnakeGame(20, 20, save.best ?? 0, "normal");
     this.renderDom();
     this.setupListeners();
     this.onSave = () => {
@@ -61,7 +63,7 @@ export class SnakeController {
     this.onSave = onSave;
 
     const currentHigh = saveData.arcadeHighScores?.["snake"] ?? 0;
-    this.state = createSnakeGame(20, 20, currentHigh);
+    this.state = createSnakeGame(20, 20, currentHigh, "normal");
 
     this.renderDom();
     this.setupListeners();
@@ -87,8 +89,14 @@ export class SnakeController {
           </button>
         </div>
 
+        <div style="display: flex; justify-content: center; margin: 2px 0 6px;">
+          <button class="ghost-btn" data-act="speed" id="snake-speed-btn" style="padding: 4px 14px; font-size: 11px; font-weight: 700; border: 1px solid rgba(41,221,244,0.35); border-radius: 14px; background: rgba(11,15,25,0.7); color: #29ddf4; cursor: pointer; letter-spacing: 0.05em;">
+            SPEED: ${this.state.speedMode.toUpperCase()}
+          </button>
+        </div>
+
         <div class="board-wrap" style="align-items: center; justify-content: center; position: relative;">
-          <canvas id="snake-canvas" width="360" height="360" style="touch-action: none; border-radius: 12px; max-width: 92vw; max-height: 52vh;"></canvas>
+          <canvas id="snake-canvas" width="360" height="360" style="touch-action: none; border-radius: 12px; max-width: 92vw; max-height: 50vh;"></canvas>
           <div id="snake-gameover" class="overlay" style="display: none;">
             <div class="win-card">
               <h2>GAME OVER</h2>
@@ -102,7 +110,7 @@ export class SnakeController {
         </div>
 
         <!-- On-screen D-Pad for Touch/Mobile -->
-        <div class="dpad-wrap" style="display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 12px;">
+        <div class="dpad-wrap" style="display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 10px;">
           <button class="dpad-btn" data-dir="up" aria-label="Up">▲</button>
           <div style="display: flex; gap: 20px;">
             <button class="dpad-btn" data-dir="left" aria-label="Left">◀</button>
@@ -140,6 +148,17 @@ export class SnakeController {
         synth.tap();
         this.destroy();
         this.onBack?.();
+        return;
+      }
+
+      if (target.dataset.act === "speed") {
+        synth.tap();
+        const modes: SpeedMode[] = ["chill", "normal", "hyper"];
+        const curIdx = modes.indexOf(this.state.speedMode);
+        const nextMode = modes[(curIdx + 1) % modes.length]!;
+        setSpeedMode(this.state, nextMode);
+        const btn = this.container?.querySelector("#snake-speed-btn");
+        if (btn) btn.textContent = `SPEED: ${nextMode.toUpperCase()}`;
         return;
       }
 
@@ -185,7 +204,7 @@ export class SnakeController {
         const absX = Math.abs(dx);
         const absY = Math.abs(dy);
 
-        if (Math.max(absX, absY) > 24) {
+        if (Math.max(absX, absY) > 20) {
           synth.step();
           hapticTap();
           if (absX > absY) {
@@ -224,7 +243,8 @@ export class SnakeController {
 
   private restart(): void {
     const currentHigh = this.saveData?.arcadeHighScores?.["snake"] ?? this.state.highScore;
-    this.state = createSnakeGame(20, 20, currentHigh);
+    const mode = this.state.speedMode;
+    this.state = createSnakeGame(20, 20, currentHigh, mode);
     const go = this.container?.querySelector<HTMLElement>("#snake-gameover");
     if (go) go.style.display = "none";
   }
@@ -237,18 +257,16 @@ export class SnakeController {
 
       const res = tickSnake(this.state, dt);
 
-      if (res.moved && !res.ateFood && !res.died) {
-        // Optional subtle step sound
-      }
-
       if (res.ateFood) {
+        this.renderer.triggerChomp();
         if (res.foodType === "multiplier" || res.foodType === "phase" || res.foodType === "slowmo") {
           synth.powerup();
         } else {
           synth.combo();
         }
         hapticTap();
-        // Emit particles
+
+        // Particles & Floating score popup
         const head = this.state.snake[0];
         if (head && this.canvas) {
           const rect = this.canvas.getBoundingClientRect();
@@ -256,12 +274,30 @@ export class SnakeController {
           const cellH = (rect.height - 24) / this.state.height;
           const px = 12 + (head.x + 0.5) * cellW;
           const py = 12 + (head.y + 0.5) * cellH;
-          this.renderer.emitFoodBurst(px, py, "#00F2FF", 14);
+
+          const color =
+            res.foodType === "multiplier"
+              ? "#FFD700"
+              : res.foodType === "slowmo"
+              ? "#00E5FF"
+              : res.foodType === "phase"
+              ? "#E056FD"
+              : "#00F2FF";
+
+          this.renderer.emitFoodBurst(px, py, color, 16);
+
+          const popupText =
+            res.foodType && res.foodType !== "energy"
+              ? `+${res.scoreGained} ${res.foodType.toUpperCase()}!`
+              : `+${res.scoreGained}${res.combo && res.combo > 1 ? " x" + res.combo : ""}`;
+
+          this.renderer.emitScorePopup(px, py, popupText, color);
         }
       }
 
       if (res.died) {
         synth.gameover();
+        this.renderer.triggerShake(10, 0.35);
         if (this.saveData && this.onSave) {
           const updated = recordHighScore(this.saveData, "snake", this.state.score);
           this.saveData = updated;
@@ -294,7 +330,7 @@ export class SnakeController {
         const dpr = window.devicePixelRatio || 1;
         const w = this.canvas.width / dpr;
         const h = this.canvas.height / dpr;
-        this.renderer.updateParticles(dt / 1000);
+        this.renderer.update(dt / 1000);
         this.renderer.render(this.ctx, this.state, w, h, now);
       }
 

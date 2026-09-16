@@ -39,7 +39,7 @@ describe("Cyber Snake Engine", () => {
     expect(game.snake[0]!.x).toBe(startX);
 
     // Tick exceeding interval moves one cell
-    const res2 = tickSnake(game, 100);
+    const res2 = tickSnake(game, 150);
     expect(res2.moved).toBe(true);
     expect(game.snake[0]!.x).toBe(startX + 1);
   });
@@ -80,5 +80,24 @@ describe("Cyber Snake Engine", () => {
     expect(game.snake.length).toBe(prevLen + 1);
     expect(game.score).toBeGreaterThan(0);
     expect(game.food).not.toBeNull();
+  });
+
+  it("buffers double turns in input queue", () => {
+    const game = createSnakeGame(20, 20);
+    // Moving right currently
+    // Turn down, then turn left in rapid succession
+    setDirection(game, { x: 0, y: 1 }); // Down
+    setDirection(game, { x: -1, y: 0 }); // Left
+    expect(game.inputQueue.length).toBe(2);
+
+    // First tick: executes down
+    tickSnake(game, 200);
+    expect(game.dir).toEqual({ x: 0, y: 1 });
+    expect(game.inputQueue.length).toBe(1);
+
+    // Second tick: executes left
+    tickSnake(game, 200);
+    expect(game.dir).toEqual({ x: -1, y: 0 });
+    expect(game.inputQueue.length).toBe(0);
   });
 });

@@ -57,6 +57,8 @@ export interface BreakerGameState {
   launched: boolean;
   expandTimerMs: number;
   laserAmmo: number;
+  combo: number;
+  paddleVx: number;
 }
 
 const BRICK_COLORS = ["#00F2FF", "#9900FF", "#FF007F", "#FFD700", "#00FF66"];
@@ -143,14 +145,20 @@ export function createBreakerGame(
     launched: false,
     expandTimerMs: 0,
     laserAmmo: 0,
+    combo: 0,
+    paddleVx: 0,
   };
 
   return state;
 }
 
-export function movePaddle(state: BreakerGameState, targetCenterX: number): void {
+export function movePaddle(state: BreakerGameState, targetCenterX: number, dt = 0.016): void {
   const half = state.paddleWidth / 2;
-  state.paddleX = Math.max(0, Math.min(state.width - state.paddleWidth, targetCenterX - half));
+  const newX = Math.max(0, Math.min(state.width - state.paddleWidth, targetCenterX - half));
+  if (dt > 0) {
+    state.paddleVx = (newX - state.paddleX) / dt;
+  }
+  state.paddleX = newX;
   if (!state.launched && state.balls.length > 0) {
     state.balls[0]!.x = state.paddleX + half;
     state.balls[0]!.y = state.paddleY - 8;
@@ -182,6 +190,7 @@ export interface BreakerEvents {
   powerUpCollected?: BreakerPowerType;
   lostLife: boolean;
   waveCleared: boolean;
+  combo: number;
 }
 
 export function tickBreaker(state: BreakerGameState, dtMs: number): BreakerEvents {
@@ -192,6 +201,7 @@ export function tickBreaker(state: BreakerGameState, dtMs: number): BreakerEvent
     brickDestroyed: false,
     lostLife: false,
     waveCleared: false,
+    combo: state.combo,
   };
 
   if (state.gameOver || state.paused) return events;
@@ -313,14 +323,21 @@ export function tickBreaker(state: BreakerGameState, dtMs: number): BreakerEvent
     ) {
       b.y = state.paddleY - b.radius;
       events.paddleHit = true;
+      state.combo = 0; // Reset combo when ball returns to paddle
 
       // Angular bounce based on hit location
       const hitOffset = (b.x - (state.paddleX + state.paddleWidth / 2)) / (state.paddleWidth / 2);
-      const clampedOffset = Math.max(-0.9, Math.min(0.9, hitOffset));
+      const clampedOffset = Math.max(-0.85, Math.min(0.85, hitOffset));
       const currentSpeed = Math.hypot(b.vx, b.vy);
       const baseAngle = -Math.PI / 2 + clampedOffset * (Math.PI / 3);
-      b.vx = Math.sin(baseAngle + Math.PI / 2) * currentSpeed;
+      b.vx = Math.sin(baseAngle + Math.PI / 2) * currentSpeed + state.paddleVx * 0.12;
       b.vy = -Math.abs(Math.cos(baseAngle + Math.PI / 2) * currentSpeed);
+      // Re-normalize speed
+      const newSpeed = Math.hypot(b.vx, b.vy);
+      if (newSpeed > 0) {
+        b.vx = (b.vx / newSpeed) * currentSpeed;
+        b.vy = (b.vy / newSpeed) * currentSpeed;
+      }
     }
 
     // Brick collisions
@@ -339,9 +356,12 @@ export function tickBreaker(state: BreakerGameState, dtMs: number): BreakerEvent
 
         brick.hitsLeft--;
         if (brick.hitsLeft <= 0) {
+          state.combo++;
+          events.combo = state.combo;
           events.brickDestroyed = true;
           events.destroyedBrick = brick;
-          state.score += brick.points;
+          const comboBonus = Math.min(250, (state.combo - 1) * 25);
+          state.score += brick.points + comboBonus;
           if (state.score > state.highScore) state.highScore = state.score;
 
           if (brick.powerUp) {

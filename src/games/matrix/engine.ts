@@ -45,7 +45,10 @@ export function cloneGrid(grid: (number | null)[][]): (number | null)[][] {
   return grid.map((row) => [...row]);
 }
 
-export function spawnRandomTile(state: MatrixGameState, rng = Math.random): boolean {
+export function spawnRandomTile(
+  state: MatrixGameState,
+  rng = Math.random,
+): { r: number; c: number; value: number } | null {
   const empty: Array<{ r: number; c: number }> = [];
   for (let r = 0; r < state.size; r++) {
     for (let c = 0; c < state.size; c++) {
@@ -55,11 +58,11 @@ export function spawnRandomTile(state: MatrixGameState, rng = Math.random): bool
     }
   }
 
-  if (empty.length === 0) return false;
+  if (empty.length === 0) return null;
   const pick = empty[Math.floor(rng() * empty.length)]!;
   const value = rng() < 0.9 ? 2 : 4;
   state.grid[pick.r]![pick.c] = value;
-  return true;
+  return { r: pick.r, c: pick.c, value };
 }
 
 export interface MatrixMoveResult {
@@ -68,6 +71,7 @@ export interface MatrixMoveResult {
   mergedValues: number[];
   reached2048: boolean;
   isGameOver: boolean;
+  spawnedTile?: { r: number; c: number; value: number } | null;
 }
 
 export function moveMatrix(
@@ -168,7 +172,7 @@ export function moveMatrix(
     result.scoreGained = gained;
     result.mergedValues = mergedVals;
 
-    spawnRandomTile(state, rng);
+    result.spawnedTile = spawnRandomTile(state, rng);
 
     if (!canMove(state)) {
       state.gameOver = true;
