@@ -1,6 +1,19 @@
-# GLOWTRAIL
+# NEON ARCADE (GLOWTRAIL)
 
-Mobile-first neon path puzzle. Rotate arrows, Launch, visit every required node, escape.
+Mobile-first cyber/neon arcade suite powered by Vite, TypeScript, Canvas, Web Audio, and Capacitor.
+
+## Featured Games
+
+1. **GLOWTRAIL (Path Puzzle)**: Rotate arrows, launch, visit required nodes, escape.
+   - 120 story levels across 6 mechanics packs (Pulse, Surge, Color Gates, Lattice, Wormhole, Vector).
+   - Daily 5-puzzle challenge with streak tracking.
+   - **Endless Zen Mode**: Procedurally generated infinite puzzles on the fly.
+   - Built-in solver, hint engine, and solutions viewer.
+2. **CYBER SNAKE**: High-velocity neon snake with combo multipliers and cyber power-up orbs (Phase Cloak, Slow-Mo, Overdrive Multiplier).
+3. **NEON BREAKER**: Laser brick breaker with paddle physics, particle explosions, multiball, expanders, and laser blaster ammo across progressive waves.
+4. **CYBER 2048**: Neon sliding tile synthesis puzzle with smooth tactile animations, 1-step undo, and endless high scoring.
+
+All games feature synthesized zero-asset Web Audio, responsive touch/keyboard controls, and unified local save & high scores.
 
 ## Commands
 
@@ -13,22 +26,6 @@ npm run preview
 ```
 
 Dev server: `http://localhost:5173`
-
-## Play
-
-Tap a cell to rotate its arrow 90 degrees clockwise. Press Launch. The token follows the path. Visit every required node, then reach the exit.
-
-- Required nodes glow with a ring; grey arrows are decoys you may ignore. Locked cells cannot be rotated.
-- `PAR` is the proven minimum number of rotations to solve the puzzle. Beat it for 3 stars, or finish within two extra moves for 2.
-- Hint analyses your current board, verifies a safe next rotation with the solver and highlights it without rotating for you. Tap "More" for a stronger second hint (once per puzzle).
-- From level 41 the Color Gates pack activates: a gate recolours the orb, and the exit only opens for the colour of the last gate.
-- From level 81 Wormhole adds portals: entering one warps the orb to its partner and keeps the same direction, skipping the tiles between.
-- From level 101 Vector adds one-way walls: a wall may only be crossed in its chevron direction, from either side.
-- 120 story levels across six packs: Pulse (1-20), Surge (21-40), Color Gates (41-60), Lattice (61-80), Wormhole (81-100) and Vector (101-120), each harder than the last.
-- Home shows stats, a Continue card and a Daily card. The level map lives behind a collapsible `LEVELS` panel; open it and switch to `Solutions` to preview any level's solved board.
-- The board menu (last option) reveals the solved board and its winning route. Revealing is a study aid: it changes no progress and awards no stars, so you still solve the level yourself.
-
-Daily Run is five date-seeded puzzles. Streak uses the local calendar date.
 
 ## Android
 

@@ -88,6 +88,72 @@ export class Synth {
   sweep(): void {
     this.beep(960, 0.028, "sine", 0.014);
   }
+
+  laser(): void {
+    const ctx = this.audio();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "sawtooth";
+    osc.frequency.setValueAtTime(880, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(110, ctx.currentTime + 0.12);
+    g.gain.setValueAtTime(0.04, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
+    osc.connect(g);
+    g.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.12);
+  }
+
+  bounce(): void {
+    this.beep(330, 0.04, "sine", 0.035);
+  }
+
+  powerup(): void {
+    this.beep(440, 0.06, "sine", 0.04);
+    setTimeout(() => this.beep(554, 0.07, "sine", 0.04), 50);
+    setTimeout(() => this.beep(659, 0.09, "sine", 0.04), 100);
+    setTimeout(() => this.beep(880, 0.14, "sine", 0.045), 150);
+  }
+
+  explosion(): void {
+    const ctx = this.audio();
+    if (!ctx) return;
+    try {
+      const bufferSize = Math.floor(ctx.sampleRate * 0.12);
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const output = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = Math.random() * 2 - 1;
+      }
+      const whiteNoise = ctx.createBufferSource();
+      whiteNoise.buffer = buffer;
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(800, ctx.currentTime);
+      filter.frequency.exponentialRampToValueAtTime(80, ctx.currentTime + 0.12);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.05, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.12);
+      whiteNoise.connect(filter);
+      filter.connect(g);
+      g.connect(ctx.destination);
+      whiteNoise.start();
+    } catch {
+      this.beep(120, 0.1, "sawtooth", 0.04);
+    }
+  }
+
+  gameover(): void {
+    this.beep(330, 0.12, "triangle", 0.045);
+    setTimeout(() => this.beep(260, 0.15, "triangle", 0.045), 110);
+    setTimeout(() => this.beep(195, 0.25, "triangle", 0.05), 230);
+  }
+
+  combo(): void {
+    this.beep(700, 0.05, "sine", 0.03);
+    setTimeout(() => this.beep(1050, 0.08, "sine", 0.035), 45);
+  }
 }
 
 export const synth = new Synth();

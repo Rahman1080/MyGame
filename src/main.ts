@@ -36,6 +36,12 @@ import { difficultyRating } from "./gen/difficulty";
 import { synth } from "./audio/synth";
 import { hapticReveal, hapticTap } from "./audio/haptics";
 import { App } from "@capacitor/app";
+import type { GameId } from "./arcade/types";
+import { arcadeHubHtml } from "./arcade/hub";
+import { SnakeController } from "./games/snake/controller";
+import { BreakerController } from "./games/breaker/controller";
+import { MatrixController } from "./games/matrix/controller";
+import { persistSave } from "./save/storage";
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const game = createGame();
@@ -45,6 +51,12 @@ let boardCss = 280;
 let selectedPack = packForLevel(game.level).id;
 const UNLOCK_ALL_LEVELS = false;
 const REVEAL_MS = 900;
+
+let activeGame: GameId = "glowtrail";
+let arcadeView: "hub" | "game" = "hub";
+const snakeController = new SnakeController();
+const breakerController = new BreakerController();
+const matrixController = new MatrixController();
 
 let levelsOpen = false;
 let solutionsMode = false;
@@ -126,7 +138,10 @@ function homeHtml(fresh = false): string {
   return `<div class="shell${fresh ? " enter" : ""}">
     <div class="home">
       <div class="home-top">
-        <div class="wordmark">GLOWTRAIL</div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <button class="icon-btn sm" data-act="arcade-hub" aria-label="Arcade Hub" style="padding: 4px 8px; font-family: Orbitron, sans-serif; font-size: 11px; letter-spacing: 0.05em; color: var(--cyan); border-color: rgba(41,221,244,0.4);">◀ HUB</button>
+          <div class="wordmark" style="margin-top: 0;">GLOWTRAIL</div>
+        </div>
         <button class="icon-btn sm" data-act="mute" aria-label="${game.save.muted ? "Unmute" : "Mute"}">${game.save.muted ? ICON_UNMUTE : ICON_MUTE}</button>
       </div>
       <div class="home-stats">
@@ -145,6 +160,13 @@ function homeHtml(fresh = false): string {
       <button class="daily-card" data-act="daily">
         <div><div class="k">Daily Run</div><div class="sub">${dailyDone >= 5 ? "Complete today" : `${dailyDone}/5 · Today`}</div></div>
         <div class="streak-pill">${ICON_FLAME}<span class="streak-n">${s} DAY</span></div>
+      </button>
+      <button class="zen-card" data-act="zen">
+        <div>
+          <div class="k" style="font-family: Orbitron, sans-serif; font-weight: 700; color: #29DDF4; font-size: 12px; letter-spacing: 0.08em;">ENDLESS ZEN</div>
+          <div class="sub" style="font-size: 11.5px; color: var(--sub);">Infinite procedural path puzzles</div>
+        </div>
+        <span class="continue-arrow" aria-hidden="true" style="color: #29DDF4;">›</span>
       </button>
       <button class="levels-toggle${levelsOpen ? " open" : ""}" data-act="toggle-levels" aria-expanded="${levelsOpen}" aria-controls="levels-body">
         <span class="levels-title">LEVELS</span>
@@ -249,7 +271,8 @@ function closeReveal(): void {
 function boardHtml(fresh = false): string {
   const s = game.session!;
   const daily = game.mode === "daily";
-  const label = daily ? `DAILY ${game.dailyIndex + 1} / 5` : `LEVEL ${game.level}`;
+  const zen = game.mode === "zen";
+  const label = zen ? "ENDLESS ZEN" : daily ? `DAILY ${game.dailyIndex + 1} / 5` : `LEVEL ${game.level}`;
   const showRetry = s.phase === "failed" && game.anim.done;
   const launchLabel = showRetry ? "Retry" : "Launch";
   const fail = s.phase === "failed" && s.failReason ? failCard(s.failReason) : "";
@@ -290,10 +313,11 @@ function winHtml(fresh = false): string {
   const s = game.session!;
   const stars = calculateStars(s.rotations, s.puzzle.par);
   const daily = game.mode === "daily";
+  const zen = game.mode === "zen";
   const complete = daily && game.save.dailyCompleted.every(Boolean);
-  const title = complete ? "DAILY COMPLETE" : "COMPLETE";
+  const title = complete ? "DAILY COMPLETE" : zen ? "ZEN COMPLETE" : "COMPLETE";
   const extra = complete ? `<div class="win-meta">STREAK ${game.save.streak}</div>` : "";
-  const next = daily ? (complete ? "Home" : "Next Daily") : "Next";
+  const next = zen ? "Next Puzzle" : daily ? (complete ? "Home" : "Next Daily") : "Next";
   return `<div class="shell" style="position:relative">
     ${boardHtml(fresh)}
     <div class="overlay">
@@ -448,9 +472,45 @@ function paint(): void {
 let lastScreen = "";
 let lastSig = "";
 
+function returnToHub(): void {
+  synth.tap();
+  if (activeGame === "snake") snakeController.destroy();
+  if (activeGame === "breaker") breakerController.destroy();
+  if (activeGame === "matrix") matrixController.destroy();
+  arcadeView = "hub";
+  lastSig = "";
+  render();
+}
+
+function launchArcadeGame(id: GameId): void {
+  activeGame = id;
+  arcadeView = "game";
+  lastSig = "";
+  if (id === "glowtrail") {
+    render();
+  } else if (id === "snake") {
+    snakeController.mount(app, returnToHub, game.save, (s) => {
+      game.save = s;
+      persistSave(s);
+    });
+  } else if (id === "breaker") {
+    breakerController.mount(app, returnToHub, game.save, (s) => {
+      game.save = s;
+      persistSave(s);
+    });
+  } else if (id === "matrix") {
+    matrixController.mount(app, returnToHub, game.save, (s) => {
+      game.save = s;
+      persistSave(s);
+    });
+  }
+}
+
 function signature(g: Game): string {
   const s = g.session;
   return [
+    arcadeView,
+    activeGame,
     g.screen,
     g.mode,
     g.level,
@@ -473,6 +533,12 @@ function signature(g: Game): string {
 }
 
 function render(): void {
+  if (arcadeView === "hub") {
+    app.innerHTML = arcadeHubHtml(game.save, totalStars(game));
+    return;
+  }
+  if (activeGame !== "glowtrail") return;
+
   const sig = signature(game);
   const screenChange = lastScreen !== game.screen;
   if (screenChange && game.screen === "home") {
@@ -501,6 +567,28 @@ app.addEventListener("click", (e) => {
   if (!t) return;
   const act = t.dataset.act;
   if (act === "menu-hold" || act === "reveal-hold") return;
+
+  if (act === "launch-game") {
+    const targetGame = (t.dataset.game as GameId) || "glowtrail";
+    synth.tap();
+    hapticTap();
+    launchArcadeGame(targetGame);
+    return;
+  }
+  if (act === "arcade-hub") {
+    returnToHub();
+    return;
+  }
+  if (act === "zen") {
+    reveal = null;
+    menuOpen = false;
+    synth.tap();
+    openBoard(game, "zen");
+    lastSig = "";
+    render();
+    return;
+  }
+
   if (act === "play") {
     reveal = null;
     menuOpen = false;
@@ -588,7 +676,22 @@ window.addEventListener("keydown", (e) => {
       render();
       return;
     }
+    if (arcadeView === "game") {
+      if (activeGame !== "glowtrail") {
+        returnToHub();
+        return;
+      }
+      if (game.screen !== "home") {
+        goHome(game);
+        lastSig = "";
+        render();
+        return;
+      }
+      returnToHub();
+      return;
+    }
   }
+  if (arcadeView !== "game" || activeGame !== "glowtrail") return;
   if (!game.session || game.screen === "home") return;
   if (e.key === "Enter") {
     e.preventDefault();
@@ -625,10 +728,12 @@ window.addEventListener("resize", () => {
 function loop(now: number): void {
   const dt = Math.min(48, now - last);
   last = now;
-  const phase = game.session?.phase;
-  tick(game, dt);
-  if (game.session?.phase !== phase) lastSig = "";
-  render();
+  if (arcadeView === "game" && activeGame === "glowtrail") {
+    const phase = game.session?.phase;
+    tick(game, dt);
+    if (game.session?.phase !== phase) lastSig = "";
+    render();
+  }
   requestAnimationFrame(loop);
 }
 
@@ -657,10 +762,18 @@ if (nativeShell) {
       render();
       return;
     }
-    if (game.screen !== "home") {
-      goHome(game);
-      lastSig = "";
-      render();
+    if (arcadeView === "game") {
+      if (activeGame !== "glowtrail") {
+        returnToHub();
+        return;
+      }
+      if (game.screen !== "home") {
+        goHome(game);
+        lastSig = "";
+        render();
+        return;
+      }
+      returnToHub();
       return;
     }
     void App.exitApp();

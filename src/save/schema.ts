@@ -18,6 +18,7 @@ export interface SaveData {
   dailyCompleted: boolean[];
   dailyStars: number[];
   muted: boolean;
+  arcadeHighScores: Record<string, number>;
 }
 
 export function defaultSave(): SaveData {
@@ -33,6 +34,7 @@ export function defaultSave(): SaveData {
     dailyCompleted: Array.from({ length: DAILY_LENGTH }, () => false),
     dailyStars: Array.from({ length: DAILY_LENGTH }, () => 0),
     muted: false,
+    arcadeHighScores: {},
   };
 }
 
@@ -92,6 +94,17 @@ export function isKnownPack(value: unknown): value is string {
   return typeof value === "string" && (KNOWN_PACKS as readonly string[]).includes(value);
 }
 
+function asHighScoreMap(value: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!value || typeof value !== "object") return out;
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) {
+      out[k] = Math.floor(v);
+    }
+  }
+  return out;
+}
+
 export function sanitizeSave(raw: unknown): SaveData {
   const d = defaultSave();
   if (raw == null || typeof raw !== "object") return d;
@@ -108,6 +121,7 @@ export function sanitizeSave(raw: unknown): SaveData {
   d.dailyCompleted = asBoolArr(o.dailyCompleted, DAILY_LENGTH);
   d.dailyStars = asStarArr(o.dailyStars, DAILY_LENGTH);
   if (typeof o.muted === "boolean") d.muted = o.muted;
+  d.arcadeHighScores = asHighScoreMap(o.arcadeHighScores);
   d.version = SAVE_VERSION;
   return d;
 }

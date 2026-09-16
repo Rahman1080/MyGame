@@ -21,8 +21,10 @@ import { synth } from "../audio/synth";
 import { hapticFail, hapticPortal, hapticWin } from "../audio/haptics";
 import { noopAds } from "../ads/adService";
 
+import { generateEndlessPuzzle } from "./endless";
+
 export type Screen = "home" | "board" | "win";
-export type Mode = "story" | "daily";
+export type Mode = "story" | "daily" | "zen";
 
 export interface Anim {
   steps: SimStep[];
@@ -52,6 +54,7 @@ export interface Game {
   anim: Anim;
   selected: { row: number; col: number } | null;
   reduced: boolean;
+  zenPuzzle?: Puzzle;
 }
 
 function emptyAnim(): Anim {
@@ -97,6 +100,10 @@ export function currentPuzzle(game: Game): Puzzle {
     if (game.daily.length === 0) game.daily = generateDailyRun(localYmd());
     return game.daily[game.dailyIndex] ?? game.daily[0]!;
   }
+  if (game.mode === "zen") {
+    if (!game.zenPuzzle) game.zenPuzzle = generateEndlessPuzzle("medium");
+    return game.zenPuzzle;
+  }
   return getLevel(game.level);
 }
 
@@ -104,11 +111,13 @@ export function openBoard(game: Game, mode: Mode, level?: number, dailyIndex?: n
   game.mode = mode;
   if (mode === "story") {
     game.level = level ?? nextUnsolved(game.save.solved, 1);
-  } else {
+  } else if (mode === "daily") {
     game.save = ensureDaily(game.save, localYmd());
     game.daily = generateDailyRun(game.save.dailyDate ?? localYmd());
     game.dailyIndex = dailyIndex ?? game.save.dailyCompleted.findIndex((v) => !v);
     if (game.dailyIndex < 0) game.dailyIndex = 0;
+  } else if (mode === "zen") {
+    game.zenPuzzle = generateEndlessPuzzle("medium");
   }
   game.session = createSession(currentPuzzle(game));
   game.anim = emptyAnim();
@@ -220,7 +229,7 @@ function finishSim(game: Game): void {
       if (game.level >= 3) game.save.tutorialDone = true;
       const pack = packForLevel(game.level);
       game.save.currentPack = pack.id;
-    } else {
+    } else if (game.mode === "daily") {
       const i = game.dailyIndex;
       game.save.dailyCompleted[i] = true;
       game.save.dailyStars[i] = Math.max(game.save.dailyStars[i] ?? 0, stars);
@@ -272,6 +281,10 @@ export function tick(game: Game, dt: number): void {
 }
 
 export function nextAfterWin(game: Game): void {
+  if (game.mode === "zen") {
+    openBoard(game, "zen");
+    return;
+  }
   if (game.mode === "daily") {
     const next = game.save.dailyCompleted.findIndex((v) => !v);
     if (next >= 0) {

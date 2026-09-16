@@ -84,3 +84,15 @@ export function solvedCount(data: SaveData, ids: string[]): number {
 export function starTotal(data: SaveData, ids: string[]): number {
   return ids.reduce((n, id) => n + (data.stars[id] ?? 0), 0);
 }
+
+export function recordHighScore(data: SaveData, gameId: string, score: number): SaveData {
+  const current = data.arcadeHighScores?.[gameId] ?? 0;
+  if (score <= current) return data;
+  return {
+    ...data,
+    arcadeHighScores: {
+      ...(data.arcadeHighScores ?? {}),
+      [gameId]: Math.floor(score),
+    },
+  };
+}
