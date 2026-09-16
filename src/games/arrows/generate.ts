@@ -7,66 +7,84 @@ import {
   type ArrowsMode,
   type ArrowsState,
   type Dir,
-  applyStep,
   bodyCells,
   isSolved,
-  movableIndices,
-  parForBoard,
+  lanePath,
+  readyIndices,
 } from "./logic";
 
-export const ARROWS_LEVEL_VERSION = "v2";
-/** Solver node ceiling; beyond this we stop searching and treat as unknown. */
-export const SOLVER_NODE_CAP = 12000;
+/** Bumping this invalidates every generated board. */
+export const ARROWS_LEVEL_VERSION = "v3";
 
 export interface BoardConfig {
   size: number;
   count: number;
   maxLock: number;
-  /** How many length-2 arrows to place. */
-  length2: number;
-  trap: "require" | "avoid" | "any";
+  maxLength: 1 | 2 | 3;
+  /** Target range for the number of arrows launchable at the start. */
+  minInitial: number;
+  maxInitial: number;
+  /** Minimum length of the forced single-choice chain at the start. */
+  minChain: number;
 }
 
 /* --------------------------------------------------------------- placement */
 
+function pickLength(rng: Rng, maxLength: number): number {
+  if (maxLength <= 1) return 1;
+  const r = rng();
+  if (maxLength === 2) return r < 0.5 ? 1 : 2;
+  return r < 0.45 ? 1 : r < 0.8 ? 2 : 3;
+}
+
+interface Placement {
+  head: number;
+  dir: Dir;
+  length: number;
+}
+
 /**
- * Scatter arrows across the board, rejecting overlaps. Because arrows may point
- * into each other, a candidate board can deadlock; solvability is verified with
- * the solver in `buildBoard` rather than guaranteed by construction. Random
- * scattering is what makes blocking (and therefore real dead ends) common,
- * which a strictly "planted" layout cannot produce.
+ * Find a spot for the next-placed arrow such that neither its body nor its
+ * escape lane touches an already placed arrow. `occupied` holds the bodies of
+ * arrows that escape AFTER this one, so a clear lane here means the arrow can
+ * always leave once they are gone.
  */
-function tryBuildRandomBoard(cfg: BoardConfig, rng: Rng): ArrowsBoard | null {
+function findPlacement(size: number, occupied: Set<number>, rng: Rng, maxLength: number): Placement | null {
+  for (let attempt = 0; attempt < 260; attempt += 1) {
+    const head = rngInt(rng, 0, size * size - 1);
+    const dir = rngInt(rng, 0, 3) as Dir;
+    const length = pickLength(rng, maxLength);
+    const body = bodyCells(size, dir, head, length);
+    if (body.length < length) continue;
+    if (body.some((cell) => occupied.has(cell))) continue;
+    if (lanePath(size, dir, head).some((cell) => occupied.has(cell))) continue;
+    return { head, dir, length };
+  }
+  return null;
+}
+
+/**
+ * Build a board by placing arrows in reverse escape order: arrow `count - 1`
+ * escapes last and is placed first. Because a new arrow may not enter the
+ * already-occupied escape lanes of previously placed arrows, launching in
+ * index order `0..count-1` always clears the board.
+ */
+export function plantBoard(cfg: BoardConfig, rng: Rng): ArrowsBoard | null {
   const size = cfg.size;
   const occupied = new Set<number>();
-  const arrows: ArrowTile[] = [];
-  let length2Left = cfg.length2;
-  const maxLock = Math.min(cfg.maxLock, Math.max(0, cfg.count - 3));
-  for (let id = 0; id < cfg.count; id += 1) {
-    const wantLong = length2Left > 0 && rng() < 0.45 ? 2 : 1;
-    let placed: ArrowTile | null = null;
-    for (let tries = 0; tries < 120; tries += 1) {
-      const head = rngInt(rng, 0, size * size - 1);
-      const dir = rngInt(rng, 0, 3) as Dir;
-      const cells = bodyCells(size, dir, head, wantLong);
-      if (cells.length < wantLong) continue;
-      if (cells.some((cell) => occupied.has(cell))) continue;
-      placed = { id, dir, head, length: wantLong, lock: 0 };
-      break;
-    }
+  const arrows: ArrowTile[] = new Array(cfg.count);
+  for (let i = cfg.count - 1; i >= 0; i -= 1) {
+    const placed = findPlacement(size, occupied, rng, cfg.maxLength);
     if (!placed) return null;
     for (const cell of bodyCells(size, placed.dir, placed.head, placed.length)) occupied.add(cell);
-    if (placed.length === 2) length2Left -= 1;
-    arrows.push(placed);
-  }
-  // At least arrow 0 stays free so a locked opening position is impossible.
-  for (let i = 1; i < arrows.length; i += 1) {
-    if (maxLock > 0 && rng() < 0.3) arrows[i]!.lock = rngInt(rng, 1, maxLock);
+    const lockTop = Math.min(cfg.maxLock, i);
+    const lock = lockTop > 0 && rng() < 0.45 ? rngInt(rng, 1, lockTop) : 0;
+    arrows[i] = { id: i, dir: placed.dir, head: placed.head, length: placed.length, lock };
   }
   return { size, arrows, seed: "" };
 }
 
-/** Simple fallback: one arrow per column pointing up, all lanes disjoint. */
+/** Simple fallback with disjoint lanes; always solvable. */
 function fallbackBoard(size: number): ArrowsBoard {
   const arrows: ArrowTile[] = [];
   for (let col = 0; col < size; col += 1) {
@@ -79,156 +97,131 @@ function fallbackBoard(size: number): ArrowsBoard {
 
 export interface SolveInfo {
   solvable: boolean;
-  overflow: boolean;
-  nodes: number;
+  /** Canonical launch order (empty when unsolvable). */
+  order: number[];
+  /** Arrows launchable at the start. */
+  initial: number[];
+  /** Longest opening run where exactly one arrow is available. */
+  chain: number;
+  /** The largest number of arrows available at any single point. */
+  maxReady: number;
 }
-
-/** Depth-first solvability check from a raw pose. Monotonic, so no cycles. */
-export function solvableFrom(
-  size: number,
-  arrows: readonly ArrowTile[],
-  heads: readonly number[],
-  bodies: readonly number[],
-  cap = SOLVER_NODE_CAP,
-): SolveInfo {
-  const memo = new Map<string, boolean>();
-  let nodes = 0;
-  let overflow = false;
-
-  const key = (h: readonly number[], b: readonly number[]): string => `${h.join(",")}|${b.join(",")}`;
-
-  const dfs = (h: number[], b: number[]): boolean => {
-    if (b.every((body) => body <= 0)) return true;
-    const k = key(h, b);
-    const cached = memo.get(k);
-    if (cached !== undefined) return cached;
-    if (nodes >= cap) {
-      overflow = true;
-      return false;
-    }
-    nodes += 1;
-    memo.set(k, false);
-    for (const i of movableIndices(size, arrows, h, b)) {
-      const step = applyStep(size, arrows, h, b, i);
-      if (dfs(step.heads, step.bodies)) {
-        memo.set(k, true);
-        return true;
-      }
-    }
-    return false;
-  };
-
-  const solvable = dfs(heads.slice(), bodies.slice());
-  return { solvable, overflow: overflow && !solvable, nodes };
-}
-
-/* -------------------------------------------------------------- generation */
 
 /**
- * Cheap trap detector: play the board forward with random legal launches and
- * report whether any run dead-ends (arrows remain but none can move). A dead
- * end found this way is a genuine reachable trap; a miss is only a false
- * negative, which generation tolerates by trying another candidate board.
+ * Greedy solve. Launching an available arrow only ever removes an arrow, which
+ * can only clear lane cells and advance locks, so the relation is monotone and
+ * a single pass is exact. If arrows remain and none is ready, the board is
+ * unsolvable.
  */
-export function trapReachable(board: ArrowsBoard, rng: Rng, tries = 80): boolean {
-  const arrows = board.arrows;
-  const size = board.size;
-  for (let t = 0; t < tries; t += 1) {
-    let h = arrows.map((arrow) => arrow.head);
-    let b = arrows.map((arrow) => arrow.length);
-    let guard = 0;
-    for (;;) {
-      if (b.every((body) => body <= 0)) break;
-      const moves = movableIndices(size, arrows, h, b);
-      if (moves.length === 0) return true;
-      const pick = moves[Math.floor(rng() * moves.length)] ?? moves[0]!;
-      const step = applyStep(size, arrows, h, b, pick);
-      h = step.heads;
-      b = step.bodies;
-      guard += 1;
-      if (guard > 400) break;
+export function solveBoard(size: number, arrows: readonly ArrowTile[], startAlive?: readonly boolean[]): SolveInfo {
+  const alive = startAlive ? startAlive.slice() : arrows.map(() => true);
+  let escaped = startAlive ? alive.reduce((count, live) => (live ? count : count + 1), 0) : 0;
+  const order: number[] = [];
+  let initial: number[] = [];
+  let chain = 0;
+  let chainClosed = false;
+  let maxReady = 0;
+  for (;;) {
+    const ready = readyIndices(size, arrows, alive, escaped);
+    if (ready.length === 0) break;
+    if (order.length === 0) initial = ready.slice();
+    maxReady = Math.max(maxReady, ready.length);
+    if (!chainClosed) {
+      if (ready.length === 1) chain += 1;
+      else chainClosed = true;
+    }
+    const pick = ready[0]!;
+    alive[pick] = false;
+    escaped += 1;
+    order.push(pick);
+  }
+  return { solvable: escaped === arrows.length, order, initial, chain, maxReady };
+}
+
+export interface Difficulty {
+  initial: number;
+  chain: number;
+  maxReady: number;
+}
+
+export function analyzeDifficulty(board: ArrowsBoard): Difficulty {
+  const info = solveBoard(board.size, board.arrows);
+  return { initial: info.initial.length, chain: info.chain, maxReady: info.maxReady };
+}
+
+function bandMiss(info: SolveInfo, cfg: BoardConfig): number {
+  let miss = 0;
+  const initial = info.initial.length;
+  if (initial < cfg.minInitial) miss += cfg.minInitial - initial;
+  if (initial > cfg.maxInitial) miss += initial - cfg.maxInitial;
+  if (info.chain < cfg.minChain) miss += cfg.minChain - info.chain;
+  return miss;
+}
+
+function buildBoard(cfg: BoardConfig, rng: Rng, attempts = 90): ArrowsBoard {
+  let best: ArrowsBoard | null = null;
+  let bestMiss = Infinity;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const board = plantBoard(cfg, rng);
+    if (!board) continue;
+    const info = solveBoard(board.size, board.arrows);
+    if (!info.solvable) continue;
+    const miss = bandMiss(info, cfg);
+    if (miss === 0) return board;
+    if (miss < bestMiss) {
+      bestMiss = miss;
+      best = board;
     }
   }
-  return false;
+  return best ?? fallbackBoard(cfg.size);
 }
 
-function isSolvable(board: ArrowsBoard): boolean {
-  return solvableFrom(
-    board.size,
-    board.arrows,
-    board.arrows.map((arrow) => arrow.head),
-    board.arrows.map((arrow) => arrow.length),
-  ).solvable;
-}
-
-function buildBoard(cfg: BoardConfig, rng: Rng, attempts = 60): ArrowsBoard {
-  let last: ArrowsBoard | null = null;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const board = tryBuildRandomBoard(cfg, rng);
-    if (!board) continue;
-    last = board;
-    // Random scattering already yields reachable dead ends on a large fraction
-    // of boards, so only the cheap "avoid" case needs trap detection.
-    if (cfg.trap === "avoid" && trapReachable(board, rng)) continue;
-    if (!isSolvable(board)) continue;
-    return board;
-  }
-  return last && isSolvable(last) ? last : fallbackBoard(cfg.size);
-}
+/* ------------------------------------------------------------------ configs */
 
 export function levelConfig(level: number): BoardConfig {
   const L = Math.min(ARROWS_TOTAL_LEVELS, Math.max(1, Math.floor(level)));
-  if (L <= 12) {
-    return {
-      size: 4,
-      count: Math.min(7, 4 + Math.floor((L - 1) / 4)),
-      maxLock: L < 8 ? 0 : 1,
-      length2: L < 5 ? 0 : 1,
-      trap: L <= 3 ? "avoid" : "any",
-    };
-  }
-  if (L <= 28) {
-    return {
-      size: 5,
-      count: Math.min(8, 6 + Math.floor((L - 13) / 8)),
-      maxLock: 2,
-      length2: 1,
-      trap: "any",
-    };
-  }
-  if (L <= 46) {
-    return {
-      size: 6,
-      count: Math.min(10, 8 + Math.floor((L - 29) / 9)),
-      maxLock: 2,
-      length2: 2,
-      trap: "any",
-    };
-  }
-  return {
-    size: 7,
-    count: Math.min(11, 10 + Math.floor((L - 47) / 10)),
-    maxLock: 3,
-    length2: 3,
-    trap: "any",
+  const lerp = (from: number, to: number, lo: number, hi: number): number => {
+    const t = to === from ? 1 : (L - from) / (to - from);
+    return Math.round(lo + (hi - lo) * Math.min(1, Math.max(0, t)));
   };
+  if (L <= 10) {
+    return { size: 4, count: lerp(1, 10, 4, 6), maxLock: 0, maxLength: 1, minInitial: 3, maxInitial: 6, minChain: 0 };
+  }
+  if (L <= 25) {
+    return { size: 5, count: lerp(11, 25, 6, 10), maxLock: 1, maxLength: 2, minInitial: 2, maxInitial: 4, minChain: 1 };
+  }
+  if (L <= 45) {
+    return { size: 6, count: lerp(26, 45, 9, 14), maxLock: 2, maxLength: 2, minInitial: 2, maxInitial: 3, minChain: 2 };
+  }
+  if (L <= 70) {
+    return { size: 7, count: lerp(46, 70, 12, 18), maxLock: 3, maxLength: 3, minInitial: 1, maxInitial: 3, minChain: 3 };
+  }
+  if (L <= 85) {
+    return { size: 8, count: lerp(71, 85, 15, 22), maxLock: 4, maxLength: 3, minInitial: 1, maxInitial: 2, minChain: 4 };
+  }
+  return { size: 9, count: lerp(86, 100, 18, 26), maxLock: 6, maxLength: 3, minInitial: 1, maxInitial: 2, minChain: 5 };
 }
 
 export function endlessConfig(index: number): BoardConfig {
   const i = Math.max(0, Math.floor(index));
-  const size = Math.min(7, 4 + Math.floor(i / 5));
+  const size = Math.min(9, 4 + Math.floor(i / 4));
+  const cap = Math.min(24, size * size - 6);
   return {
     size,
-    count: Math.min(size + 3, size + 1 + Math.floor(i / 6)),
-    maxLock: Math.min(3, 1 + Math.floor(i / 6)),
-    length2: Math.min(3, 1 + Math.floor(i / 5)),
-    trap: "any",
+    count: Math.min(cap, size + 2 + Math.floor(i / 3)),
+    maxLock: Math.min(6, Math.floor(i / 4)),
+    maxLength: (Math.min(3, 1 + Math.floor(i / 6)) || 1) as 1 | 2 | 3,
+    minInitial: 1,
+    maxInitial: Math.max(2, 4 - Math.floor(i / 8)),
+    minChain: Math.min(5, Math.floor(i / 5)),
   };
 }
 
 export function dailyConfig(): BoardConfig {
-  return { size: 6, count: 8, maxLock: 2, length2: 2, trap: "any" };
+  return { size: 7, count: 13, maxLock: 2, maxLength: 2, minInitial: 1, maxInitial: 3, minChain: 2 };
 }
+
+/* ---------------------------------------------------------------- generators */
 
 const boardCache = new Map<string, ArrowsBoard>();
 
@@ -269,12 +262,11 @@ function stateFromBoard(
     boardIndex,
     size: board.size,
     arrows: board.arrows,
-    heads: board.arrows.map((arrow) => arrow.head),
-    bodies: board.arrows.map((arrow) => arrow.length),
+    alive: board.arrows.map(() => true),
     escaped: 0,
     launches: 0,
+    missteps: 0,
     hints: 0,
-    par: parForBoard(board.size, board.arrows),
     seed: board.seed,
     date,
     status: "playing",
@@ -300,17 +292,19 @@ export function createDailyState(date: string): ArrowsState {
 
 /* -------------------------------------------------------------------- hints */
 
-/**
- * A hint is a launch that keeps the board solvable. Falls back to any legal
- * move (or null) when the solver cannot decide within its node budget.
- */
-export function safeLaunchIndex(state: ArrowsState): number | null {
-  const moves = movableIndices(state.size, state.arrows, state.heads, state.bodies);
-  if (moves.length === 0) return null;
-  for (const i of moves) {
-    const step = applyStep(state.size, state.arrows, state.heads, state.bodies, i);
-    const info = solvableFrom(state.size, state.arrows, step.heads, step.bodies);
-    if (info.solvable || info.overflow) return i;
+export function hintIndex(state: ArrowsState): number | null {
+  const ready = readyIndices(state.size, state.arrows, state.alive, state.escaped);
+  if (ready.length === 0) return null;
+  let best = ready[0]!;
+  let bestGain = -1;
+  for (const index of ready) {
+    const alive = state.alive.slice();
+    alive[index] = false;
+    const gain = readyIndices(state.size, state.arrows, alive, state.escaped + 1).length;
+    if (gain > bestGain) {
+      bestGain = gain;
+      best = index;
+    }
   }
-  return moves[0] ?? null;
+  return best;
 }
