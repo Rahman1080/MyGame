@@ -98,40 +98,102 @@ describe("Meowdoku Engine", () => {
     expect(engine.getStars()).toBe(3);
   });
 
-  it("penalizes mistakes by decrementing hearts and triggers game over at 0", () => {
+  it("penalizes rule-breaking placements by decrementing hearts", () => {
     const engine = new MeowdokuEngine();
     engine.newLevel(1, "test-seed-4");
 
-    // Find a cell that is NOT in the solution
-    const nonSolCell = (() => {
-      for (let r = 0; r < 5; r++) {
-        for (let c = 0; c < 5; c++) {
-          if (!engine.grid[r]?.[c]?.correct) return { row: r, col: c };
-        }
-      }
-      return { row: 0, col: 0 };
-    })();
-
+    const n = engine.size;
+    const first = engine.solution[0]!;
+    expect(engine.placeCat(first.row, first.col)).toBe(true);
     expect(engine.hearts).toBe(3);
 
-    // Mistake 1
-    const ok1 = engine.placeCat(nonSolCell.row, nonSolCell.col);
-    expect(ok1).toBe(false);
-    expect(engine.hearts).toBe(2);
-    expect(engine.invalidCells.length).toBeGreaterThan(0);
-    expect(engine.phase).toBe("play");
+    const conflicts = [
+      { row: first.row, col: (first.col + 1) % n }, // same row
+      { row: (first.row + 1) % n, col: first.col }, // same column
+      {
+        row: first.row + 1 < n ? first.row + 1 : first.row - 1,
+        col: first.col + 1 < n ? first.col + 1 : first.col - 1,
+      }, // touching diagonally
+    ];
 
-    // Mistake 2
-    const ok2 = engine.placeCat(nonSolCell.row, nonSolCell.col);
-    expect(ok2).toBe(false);
-    expect(engine.hearts).toBe(1);
-    expect(engine.phase).toBe("play");
+    for (const cell of conflicts) {
+      const ok = engine.placeCat(cell.row, cell.col);
+      expect(ok).toBe(false);
+      expect(engine.grid[cell.row]?.[cell.col]?.mark).toBe("empty");
+    }
 
-    // Mistake 3 -> Game Over
-    const ok3 = engine.placeCat(nonSolCell.row, nonSolCell.col);
-    expect(ok3).toBe(false);
     expect(engine.hearts).toBe(0);
     expect(engine.phase).toBe("over");
+  });
+
+  it("accepts any rule-valid placement, not just the generated solution", () => {
+    const engine = new MeowdokuEngine();
+    engine.newLevel(1, "test-seed-4b");
+
+    // On an empty board every cell obeys the rules, even a non-solution cell.
+    let nonSolution: { row: number; col: number } | null = null;
+    for (let r = 0; r < engine.size && !nonSolution; r++) {
+      for (let c = 0; c < engine.size; c++) {
+        if (engine.grid[r]?.[c] && !engine.grid[r]![c]!.correct) {
+          nonSolution = { row: r, col: c };
+          break;
+        }
+      }
+    }
+    expect(nonSolution).not.toBeNull();
+
+    const ok = engine.placeCat(nonSolution!.row, nonSolution!.col);
+    expect(ok).toBe(true);
+    expect(engine.grid[nonSolution!.row]?.[nonSolution!.col]?.mark).toBe("cat");
+    expect(engine.hearts).toBe(3);
+  });
+
+  it("preserves an X and leaves no stale undo entry when a placement is rejected", () => {
+    const engine = new MeowdokuEngine();
+    engine.newLevel(1, "test-seed-4c");
+
+    const n = engine.size;
+    const first = engine.solution[0]!;
+    const conflict = { row: first.row, col: (first.col + 1) % n };
+
+    engine.tapCell(conflict.row, conflict.col); // -> x
+    expect(engine.grid[conflict.row]?.[conflict.col]?.mark).toBe("x");
+
+    engine.placeCat(first.row, first.col); // valid anchor
+    const undoLen = engine.undoStack.length;
+
+    const ok = engine.placeCat(conflict.row, conflict.col);
+    expect(ok).toBe(false);
+    expect(engine.grid[conflict.row]?.[conflict.col]?.mark).toBe("x");
+    expect(engine.undoStack.length).toBe(undoLen);
+  });
+
+  it("makes removeCat undoable", () => {
+    const engine = new MeowdokuEngine();
+    engine.newLevel(1, "test-seed-4d");
+
+    const sol = engine.solution[0]!;
+    engine.placeCat(sol.row, sol.col);
+    engine.removeCat(sol.row, sol.col);
+    expect(engine.grid[sol.row]?.[sol.col]?.mark).toBe("empty");
+
+    engine.undo();
+    expect(engine.grid[sol.row]?.[sol.col]?.mark).toBe("cat");
+    expect(engine.catsPlaced).toBe(1);
+  });
+
+  it("clears conflict highlighting after a hint", () => {
+    const engine = new MeowdokuEngine();
+    engine.newLevel(1, "test-seed-4e");
+
+    const n = engine.size;
+    const first = engine.solution[0]!;
+    engine.placeCat(first.row, first.col);
+    engine.placeCat(first.row, (first.col + 1) % n); // conflict
+    expect(engine.invalidCells.length).toBeGreaterThan(0);
+
+    engine.useHint();
+    expect(engine.invalidCells.length).toBe(0);
   });
 
   it("supports undoing moves", () => {

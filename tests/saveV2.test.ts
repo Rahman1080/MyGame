@@ -46,6 +46,29 @@ describe("save v2 migration", () => {
     expect(mem.getItem(SAVE_KEY_V2)).not.toBeNull();
   });
 
+  it("migrates legacy arcade high scores into their v2 slices", () => {
+    const mem = new Mem();
+    const v1 = writeV1(mem);
+    v1.arcadeHighScores = {
+      snake: 120,
+      breaker: 340,
+      matrix: 75,
+      wordsearch: 900,
+      wordconnect: 450,
+      meowdoku: 7,
+      unknownGame: 1,
+    };
+    mem.setItem(SAVE_KEY_V1, JSON.stringify(v1));
+
+    const v2 = loadSaveV2(mem);
+    expect(v2.games.snake.best).toBe(120);
+    expect(v2.games.breaker.best).toBe(340);
+    expect(v2.games.matrix.best).toBe(75);
+    expect(v2.games.wordsearch.best).toBe(900);
+    expect(v2.games.wordconnect.best).toBe(450);
+    expect(v2.games.meowdoku.best).toBe(7);
+  });
+
   it("is idempotent", () => {
     const mem = new Mem();
     writeV1(mem);

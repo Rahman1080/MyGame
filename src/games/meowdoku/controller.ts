@@ -5,7 +5,7 @@
 import { synth } from "../../audio/synth";
 import { hapticTap } from "../../audio/haptics";
 import { recordHighScore } from "../../save/storage";
-import type { SaveData } from "../../save/schema";
+import type { BasicScoreSave, SaveData } from "../../save/schema";
 import { MeowdokuEngine } from "./engine";
 import { MeowdokuRenderer } from "./render";
 
@@ -21,9 +21,10 @@ export class MeowdokuController {
   private onBack: (() => void) | null = null;
   private onSave: ((s: SaveData) => void) | null = null;
   private saveData: SaveData | null = null;
-  private arcadeSave: { best: number } | null = null;
-  private onArcadeSave: ((s: { best: number }) => void) | null = null;
+  private arcadeSave: BasicScoreSave | null = null;
+  private onArcadeSave: ((s: BasicScoreSave) => void) | null = null;
   private abortController: AbortController | null = null;
+  private levelSeed = "";
 
   private selectedCell: { row: number; col: number } | null = null;
   private lastTapTime = 0;
@@ -41,17 +42,18 @@ export class MeowdokuController {
   mountArcade(
     container: HTMLElement,
     onBack: () => void,
-    save: { best: number },
-    onSave: (s: { best: number }) => void,
+    save: BasicScoreSave,
+    onSave: (s: BasicScoreSave) => void,
   ): void {
     this.container = container;
     this.onBack = onBack;
     this.arcadeSave = save;
     this.onArcadeSave = onSave;
 
-    // Start at highest unlocked level (resuming saved progress)
-    const startLevel = Math.max(1, save.best || 1);
-    this.engine.newLevel(startLevel);
+    // Start at the highest unlocked level. Older saves stored the level in
+    // `best`, so fall back to it when `level` is absent.
+    const startLevel = Math.max(1, save.level ?? save.best ?? 1);
+    this.beginLevel(startLevel);
 
     this.renderDom();
     this.setupListeners();
@@ -80,11 +82,17 @@ export class MeowdokuController {
     this.updateHud();
   }
 
+  /** Starts a level with a fresh, retry-stable seed. */
+  private beginLevel(level: number): void {
+    this.levelSeed = `${level}:${Math.floor(Math.random() * 1e9)}`;
+    this.engine.newLevel(level, this.levelSeed);
+  }
+
   private renderDom(): void {
     if (!this.container) return;
     this.container.innerHTML = `
       <div class="shell enter">
-        <div class="hud">
+        <div class="hud" style="grid-template-columns: 44px 1fr 44px;">
           <button class="icon-btn" data-act="back" aria-label="Back to Arcade">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             <span>Hub</span>
@@ -131,16 +139,16 @@ export class MeowdokuController {
 
         <!-- Mode Switcher & Tools Dock -->
         <div class="dock" style="display: flex; justify-content: center; gap: 8px; padding: 10px 16px 14px;">
-          <button class="dpad-btn" data-act="mode-auto" id="meow-mode-auto" style="flex: 1; max-width: 100px; padding: 8px; font-size: 12px; background: rgba(64, 196, 255, 0.25); border: 1px solid #40c4ff; border-radius: 8px; color: #fff;">
+          <button class="dpad-btn" data-act="mode-auto" id="meow-mode-auto" style="flex: 1; max-width: 100px; min-height: 44px; padding: 8px; font-size: 12px; background: rgba(64, 196, 255, 0.25); border: 1px solid #40c4ff; border-radius: 8px; color: #fff;">
             ⚡ Auto
           </button>
-          <button class="dpad-btn" data-act="mode-cat" id="meow-mode-cat" style="flex: 1; max-width: 100px; padding: 8px; font-size: 12px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; color: #fff;">
+          <button class="dpad-btn" data-act="mode-cat" id="meow-mode-cat" style="flex: 1; max-width: 100px; min-height: 44px; padding: 8px; font-size: 12px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; color: #fff;">
             🐱 Cat
           </button>
-          <button class="dpad-btn" data-act="mode-x" id="meow-mode-x" style="flex: 1; max-width: 100px; padding: 8px; font-size: 12px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; color: #fff;">
+          <button class="dpad-btn" data-act="mode-x" id="meow-mode-x" style="flex: 1; max-width: 100px; min-height: 44px; padding: 8px; font-size: 12px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; color: #fff;">
             ❌ Mark X
           </button>
-          <button class="dpad-btn" data-act="hint" id="meow-hint-btn" style="flex: 1; max-width: 90px; padding: 8px; font-size: 12px; background: rgba(255, 215, 64, 0.15); border: 1px solid #ffd740; border-radius: 8px; color: #ffd740;">
+          <button class="dpad-btn" data-act="hint" id="meow-hint-btn" style="flex: 1; max-width: 90px; min-height: 44px; padding: 8px; font-size: 12px; background: rgba(255, 215, 64, 0.15); border: 1px solid #ffd740; border-radius: 8px; color: #ffd740;">
             💡 Hint (<span id="meow-hints-count">${this.engine.hintsRemaining}</span>)
           </button>
         </div>
@@ -246,20 +254,25 @@ export class MeowdokuController {
           this.onBack?.();
         } else if (act === "undo") {
           synth.step();
+          this.clearPendingTap();
           this.engine.undo();
           this.updateHud();
         } else if (act === "hint") {
+          this.clearPendingTap();
           this.triggerHint();
         } else if (act === "mode-auto") {
           synth.tap();
+          this.clearPendingTap();
           this.inputMode = "auto";
           this.updateHud();
         } else if (act === "mode-cat") {
           synth.tap();
+          this.clearPendingTap();
           this.inputMode = "cat";
           this.updateHud();
         } else if (act === "mode-x") {
           synth.tap();
+          this.clearPendingTap();
           this.inputMode = "x";
           this.updateHud();
         } else if (act === "next-level") {
@@ -340,8 +353,6 @@ export class MeowdokuController {
       },
       { signal },
     );
-
-    window.addEventListener("resize", () => this.resizeCanvas(), { signal });
   }
 
   private getCellFromPointer(e: PointerEvent): { row: number; col: number } | null {
@@ -395,19 +406,19 @@ export class MeowdokuController {
       now - this.lastTapTime < 280;
 
     if (isDoubleTap) {
+      this.clearPendingTap();
+      this.handleCatPlacement(row, col);
+    } else {
+      // A tap on a different cell must not silently drop the earlier one.
       if (this.tapTimeoutId !== null) {
         window.clearTimeout(this.tapTimeoutId);
         this.tapTimeoutId = null;
+        if (this.lastTapCell) {
+          this.handleXToggle(this.lastTapCell.row, this.lastTapCell.col);
+        }
       }
-      this.lastTapTime = 0;
-      this.lastTapCell = null;
-      this.handleCatPlacement(row, col);
-    } else {
       this.lastTapTime = now;
       this.lastTapCell = { row, col };
-      if (this.tapTimeoutId !== null) {
-        window.clearTimeout(this.tapTimeoutId);
-      }
       this.tapTimeoutId = window.setTimeout(() => {
         this.tapTimeoutId = null;
         this.handleXToggle(row, col);
@@ -415,7 +426,17 @@ export class MeowdokuController {
     }
   }
 
+  private clearPendingTap(): void {
+    if (this.tapTimeoutId !== null) {
+      window.clearTimeout(this.tapTimeoutId);
+      this.tapTimeoutId = null;
+    }
+    this.lastTapCell = null;
+    this.lastTapTime = 0;
+  }
+
   private handleCatPlacement(row: number, col: number): void {
+    this.clearPendingTap();
     const cell = this.engine.grid[row]?.[col];
     if (!cell) return;
 
@@ -443,6 +464,7 @@ export class MeowdokuController {
   }
 
   private handleXToggle(row: number, col: number): void {
+    this.clearPendingTap();
     const res = this.engine.tapCell(row, col);
     if (res === "x") {
       synth.tap();
@@ -495,13 +517,15 @@ export class MeowdokuController {
 
   private saveProgress(): void {
     const nextLevel = this.engine.level + 1;
+    const levelScore = this.engine.level * 100 + this.engine.getStars() * 50;
     if (this.arcadeSave && this.onArcadeSave) {
-      if (nextLevel > this.arcadeSave.best) {
-        this.arcadeSave.best = nextLevel;
-        this.onArcadeSave({ best: nextLevel });
-      }
+      const best = Math.max(this.arcadeSave.best ?? 0, levelScore);
+      const level = Math.max(this.arcadeSave.level ?? 1, nextLevel);
+      this.arcadeSave.best = best;
+      this.arcadeSave.level = level;
+      this.onArcadeSave({ best, level });
     } else if (this.saveData && this.onSave) {
-      const updated = recordHighScore(this.saveData, "meowdoku", nextLevel);
+      const updated = recordHighScore(this.saveData, "meowdoku", levelScore);
       this.saveData = updated;
       this.onSave(updated);
     }
@@ -510,17 +534,25 @@ export class MeowdokuController {
   private startNextLevel(): void {
     const modal = this.container?.querySelector<HTMLElement>("#meow-win-modal");
     if (modal) modal.style.display = "none";
-    this.engine.newLevel(this.engine.level + 1);
-    this.selectedCell = null;
+    this.resetTransientState();
+    this.beginLevel(this.engine.level + 1);
     this.updateHud();
   }
 
   private retryLevel(): void {
     const modal = this.container?.querySelector<HTMLElement>("#meow-gameover-modal");
     if (modal) modal.style.display = "none";
-    this.engine.newLevel(this.engine.level);
-    this.selectedCell = null;
+    this.resetTransientState();
+    // Reuse the current seed so "retry" is really the same puzzle.
+    this.engine.newLevel(this.engine.level, this.levelSeed);
     this.updateHud();
+  }
+
+  private resetTransientState(): void {
+    this.clearPendingTap();
+    this.selectedCell = null;
+    this.flashError = false;
+    this.errorTimer = 0;
   }
 
   private startLoop(): void {

@@ -132,27 +132,28 @@ export class MeowdokuEngine {
     return 'invalid';
   }
 
-  /** Double tap: place cat. Returns true if correct */
+  /** Double tap: place cat. Returns true if the placement obeys the rules */
   placeCat(row: number, col: number): boolean {
     if (this.phase !== 'play') return false;
     const cell = this.grid[row]?.[col];
     if (!cell || cell.mark === 'cat') return false;
 
-    this.undoStack.push({ row, col, prevMark: cell.mark });
+    const prevMark = cell.mark;
     cell.mark = 'cat';
     this.catsPlaced++;
 
-    if (!cell.correct) {
+    if (this._conflictsWith(row, col)) {
       this.hearts--;
       this.invalidCells = [{ row, col }];
       this._findConflicts(row, col);
-      // revert placement (wrong answer)
-      cell.mark = 'empty';
+      // revert placement (wrong answer) and preserve any X the cell held
+      cell.mark = prevMark;
       this.catsPlaced--;
       if (this.hearts <= 0) this.phase = 'over';
       return false;
     }
 
+    this.undoStack.push({ row, col, prevMark });
     this.invalidCells = [];
     if (this._checkWin()) this.phase = 'won';
     return true;
@@ -162,6 +163,7 @@ export class MeowdokuEngine {
   removeCat(row: number, col: number): void {
     const cell = this.grid[row]?.[col];
     if (!cell || cell.mark !== 'cat') return;
+    this.undoStack.push({ row, col, prevMark: 'cat' });
     cell.mark = 'empty';
     this.catsPlaced--;
   }
@@ -179,16 +181,38 @@ export class MeowdokuEngine {
     return entry;
   }
 
-  /** Reveal one correct cell */
+  /** Reveal one rule-valid cell (prefers the generated solution) */
   useHint(): { row: number; col: number } | null {
     if (this.phase !== 'play' || this.hintsRemaining <= 0) return null;
-    const unplaced = this.solution.filter(
-      (s) => this.grid[s.row]?.[s.col]?.mark !== 'cat',
-    );
-    if (unplaced.length === 0) return null;
 
-    const idx = Math.floor(this._rng() * unplaced.length);
-    const pick = unplaced[idx];
+    const pickFrom = (
+      list: { row: number; col: number }[],
+    ): { row: number; col: number } | null =>
+      list.length === 0
+        ? null
+        : list[Math.floor(this._rng() * list.length)] ?? null;
+
+    const solutionCells = this.solution.filter((s) => {
+      const cell = this.grid[s.row]?.[s.col];
+      return Boolean(cell) && cell!.mark !== 'cat' && !this._conflictsWith(s.row, s.col);
+    });
+    let pick = pickFrom(solutionCells);
+
+    if (!pick) {
+      // The player may be building a different (equally valid) solution, so
+      // fall back to any cell that still obeys the rules.
+      const validCells: { row: number; col: number }[] = [];
+      for (let r = 0; r < this.size; r++) {
+        for (let c = 0; c < this.size; c++) {
+          const cell = this.grid[r]?.[c];
+          if (cell && cell.mark !== 'cat' && !this._conflictsWith(r, c)) {
+            validCells.push({ row: r, col: c });
+          }
+        }
+      }
+      pick = pickFrom(validCells);
+    }
+
     if (!pick) return null;
 
     this.hintsRemaining--;
@@ -198,6 +222,7 @@ export class MeowdokuEngine {
     this.undoStack.push({ row: pick.row, col: pick.col, prevMark: cell.mark });
     cell.mark = 'cat';
     this.catsPlaced++;
+    this.invalidCells = [];
     if (this._checkWin()) this.phase = 'won';
     return pick;
   }
@@ -207,11 +232,35 @@ export class MeowdokuEngine {
     return Math.max(1, this.hearts);
   }
 
-  /** Check if all solution cells have cats */
+  /** Check whether the board is a complete, rule-valid solution */
   _checkWin(): boolean {
-    return this.solution.every(
-      (s) => this.grid[s.row]?.[s.col]?.mark === 'cat',
-    );
+    if (this.catsPlaced !== this.size) return false;
+    for (let r = 0; r < this.size; r++) {
+      for (let c = 0; c < this.size; c++) {
+        if (this.grid[r]?.[c]?.mark === 'cat' && this._conflictsWith(r, c)) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  /** True when a cat at (row,col) would break a row/column/region/touch rule */
+  private _conflictsWith(row: number, col: number): boolean {
+    const n = this.size;
+    const self = this.grid[row]?.[col];
+    if (!self) return true;
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        if (r === row && c === col) continue;
+        const other = this.grid[r]?.[c];
+        if (!other || other.mark !== 'cat') continue;
+        if (r === row || c === col) return true;
+        if (other.region === self.region) return true;
+        if (Math.abs(r - row) <= 1 && Math.abs(c - col) <= 1) return true;
+      }
+    }
+    return false;
   }
 
   /* ── puzzle generation ── */
@@ -231,8 +280,8 @@ export class MeowdokuEngine {
     }
 
     if (!queens || !regions) {
-      // hard-coded fallback for 5×5
-      queens = this._placeQueens(n) ?? [0, 2, 4, 1, 3];
+      // Hard fallback: a valid non-adjacent permutation, then any region map.
+      queens = this._fallbackQueens(n);
       regions =
         this._buildRegions(n, queens) ?? this._bandRegions(n, queens);
     }
@@ -286,6 +335,14 @@ export class MeowdokuEngine {
     };
 
     return solve(0) ? cols : null;
+  }
+
+  /** Ever-valid fallback: even columns first, then odd (no two adjacent). */
+  private _fallbackQueens(n: number): number[] {
+    const cols: number[] = [];
+    for (let c = 0; c < n; c += 2) cols.push(c);
+    for (let c = 1; c < n; c += 2) cols.push(c);
+    return cols;
   }
 
   /** BFS flood-fill from queen positions to build contiguous regions */
