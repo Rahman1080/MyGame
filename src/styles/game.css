@@ -978,8 +978,8 @@ button:focus-visible,
   height: 32px;
   border-radius: 9px;
   object-fit: cover;
-  border: 1.5px solid var(--cyan);
-  box-shadow: 0 0 12px rgba(41, 221, 244, 0.5);
+  border: 1.5px solid currentColor;
+  box-shadow: 0 0 10px currentColor;
   display: block;
 }
 

@@ -1,7 +1,7 @@
 import type { Rng } from "../gen/seededRng";
 import type { SaveV2 } from "../save/schema";
 
-export type GameId = "glowtrail" | "fusion" | "prism" | "glyph" | "blocks" | "arrows" | "snake" | "breaker" | "matrix" | "wordsearch" | "wordconnect";
+export type GameId = "glowtrail" | "fusion" | "prism" | "glyph" | "blocks" | "arrows" | "snake" | "breaker" | "matrix" | "wordsearch" | "wordconnect" | "meowdoku";
 
 /** Union of the six per-game save slices. */
 export type AnyGameSave = SaveV2["games"][GameId];

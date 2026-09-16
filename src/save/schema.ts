@@ -249,6 +249,7 @@ export interface SaveV2 {
     matrix: BasicScoreSave;
     wordsearch: BasicScoreSave;
     wordconnect: BasicScoreSave;
+    meowdoku: BasicScoreSave;
   };
 }
 
@@ -314,6 +315,7 @@ export function defaultSaveV2(): SaveV2 {
       matrix: { best: 0 },
       wordsearch: { best: 0 },
       wordconnect: { best: 0 },
+      meowdoku: { best: 0 },
     },
   };
 }
@@ -511,6 +513,10 @@ export function sanitizeV2(raw: unknown): SaveV2 {
   if (g.wordconnect && typeof g.wordconnect === "object") {
     const wc = g.wordconnect as Record<string, unknown>;
     d.games.wordconnect.best = asCount(wc.best);
+  }
+  if (g.meowdoku && typeof g.meowdoku === "object") {
+    const md = g.meowdoku as Record<string, unknown>;
+    d.games.meowdoku.best = asCount(md.best);
   }
   d.version = 2;
   return d;

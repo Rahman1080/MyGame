@@ -22,6 +22,8 @@ const GAME_ICONS: Record<GameId | string, string> = {
   wordsearch: `<svg width="26" height="26" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="3" stroke-dasharray="3 3" opacity="0.45" /><line x1="7" y1="7" x2="17" y2="17" stroke-width="2.5" /><circle cx="21" cy="14" r="5.5" /><line x1="25" y1="18" x2="28.5" y2="21.5" stroke-width="2.5" /></svg>`,
 
   wordconnect: `<svg width="26" height="26" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="16" cy="7" r="3.5" fill="currentColor" fill-opacity="0.3" /><circle cx="25" cy="16" r="3.5" fill="currentColor" fill-opacity="0.3" /><circle cx="7" cy="16" r="3.5" fill="currentColor" fill-opacity="0.3" /><circle cx="16" cy="25" r="3.5" fill="currentColor" fill-opacity="0.55" /><path d="M16 7 L25 16 L16 25" stroke-width="2" /></svg>`,
+
+  meowdoku: `<svg width="26" height="26" viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 24 C 6 20, 5 15, 6 11 L10 14 C 13 13, 19 13, 22 14 L26 11 C 27 15, 26 20, 24 24 C 20 27, 12 27, 8 24 Z" fill="currentColor" fill-opacity="0.25" /><circle cx="12" cy="18" r="1.5" fill="currentColor" /><circle cx="20" cy="18" r="1.5" fill="currentColor" /><path d="M15 21 L16 22 L17 21" stroke-width="1.8" /><line x1="10" y1="19" x2="6" y2="18.5" opacity="0.6" /><line x1="22" y1="19" x2="26" y2="18.5" opacity="0.6" /></svg>`,
 };
 
 export function getGameIcon(gameId: GameId | string): string {

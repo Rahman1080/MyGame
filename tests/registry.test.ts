@@ -15,6 +15,7 @@ describe("game registry", () => {
       "matrix",
       "wordsearch",
       "wordconnect",
+      "meowdoku",
     ]);
   });
 
@@ -83,5 +84,17 @@ describe("game registry", () => {
     const game = (await desc!.load!()).default;
     expect(game.meta.id).toBe("arrows");
     expect(game.daily("daily:arrows:2026-09-15")).toEqual({ date: "2026-09-15", seed: "daily:arrows:2026-09-15" });
+  });
+
+  it("loads the ready meowdoku adapter with its own daily mode", async () => {
+    const desc = findGame("meowdoku");
+    expect(desc?.meta.status).toBe("ready");
+    expect(desc?.meta.name).toBe("MEOWDOKU");
+    expect(desc?.meta.tagline).toBe("Cats logic puzzle");
+    expect(desc?.meta.hasGauntlet).toBe(false);
+    expect(desc?.load).toBeTypeOf("function");
+    const game = (await desc!.load!()).default;
+    expect(game.meta.id).toBe("meowdoku");
+    expect(game.daily("daily:meowdoku:2026-09-15")).toEqual({ seed: "daily:meowdoku:2026-09-15" });
   });
 });
