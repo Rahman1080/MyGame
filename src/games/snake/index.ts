@@ -19,10 +19,17 @@ export default {
   mount(root: HTMLElement, ctx: GameContext) {
     controller = new SnakeController();
     const saveSlice = (ctx.save ?? { best: 0 }) as BasicScoreSave;
-    controller.mountArcade(root, () => ctx.exit(), saveSlice, (updated) => {
-      ctx.updateSave(updated);
-      ctx.report({ score: updated.best });
-    });
+    controller.mountArcade(
+      root,
+      () => ctx.exit(),
+      saveSlice,
+      (updated) => {
+        ctx.updateSave(updated);
+      },
+      (saved) => {
+        ctx.report({ score: saved.best });
+      },
+    );
   },
   unmount() {
     controller?.destroy();

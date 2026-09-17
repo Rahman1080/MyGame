@@ -30,6 +30,7 @@ export class BreakerController {
   private saveData: SaveData | null = null;
   private arcadeSave: { best: number } | null = null;
   private onArcadeSave: ((s: { best: number }) => void) | null = null;
+  private onArcadeReport: ((s: { best: number }) => void) | null = null;
   private abortController: AbortController | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private freezeFrames = 0;
@@ -46,11 +47,13 @@ export class BreakerController {
     onBack: () => void,
     save: { best: number },
     onSave: (s: { best: number }) => void,
+    onReport?: (s: { best: number }) => void,
   ): void {
     this.container = container;
     this.onBack = onBack;
     this.arcadeSave = save;
     this.onArcadeSave = onSave;
+    this.onArcadeReport = onReport ?? null;
     this.gameOverHandled = false;
     this.state = createBreakerGame(360, 480, save.best ?? 0);
     this.renderDom();
@@ -81,7 +84,7 @@ export class BreakerController {
     if (!this.container) return;
     this.container.innerHTML = `
       <div class="shell enter">
-        <div class="hud">
+        <div class="hud" style="grid-template-columns: 44px 1fr 44px;">
           <button class="icon-btn" data-act="back" aria-label="Back to Arcade">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             <span>Hub</span>
@@ -89,7 +92,7 @@ export class BreakerController {
           <div class="center-meta">
             <div class="lvl" id="breaker-stage-txt" style="letter-spacing: 1px; color: #00F2FF;">STAGE 1 · ★★★</div>
             <div class="par">SCORE <b id="breaker-score">0</b> · BEST <b id="breaker-high">${this.state.highScore}</b></div>
-            <div class="par-sub" id="breaker-status">STREAM: ⚽ 30 BALLS · READY</div>
+            <div class="par-sub" id="breaker-status">STREAM: 30 BALLS · READY</div>
           </div>
           <button class="icon-btn" data-act="pause" aria-label="Pause game">
             <span id="breaker-pause-txt">Pause</span>
@@ -98,7 +101,7 @@ export class BreakerController {
 
         <div class="board-wrap" style="align-items: center; justify-content: center; position: relative;">
           <div id="breaker-flight-controls" style="position: absolute; top: 10px; right: 12px; display: none; gap: 8px; z-index: 10;">
-            <button class="icon-btn sm" data-act="speed-btn" id="breaker-float-speed" title="Fast Forward (1x, 2x, 3x, 5x)" style="color: #FFD700; background: rgba(7, 8, 14, 0.9); backdrop-filter: blur(6px); font-weight: 800; border: 1.5px solid rgba(255, 215, 0, 0.6); padding: 5px 12px; border-radius: 20px; font-size: 12px; box-shadow: 0 0 12px rgba(255, 215, 0, 0.35); cursor: pointer;">⏩ 1x</button>
+            <button class="icon-btn sm" data-act="speed-btn" id="breaker-float-speed" title="Fast Forward (1x, 2x, 3x, 5x)" style="color: #FFD700; background: rgba(7, 8, 14, 0.9); backdrop-filter: blur(6px); font-weight: 800; border: 1.5px solid rgba(255, 215, 0, 0.6); padding: 5px 12px; border-radius: 20px; font-size: 12px; box-shadow: 0 0 12px rgba(255, 215, 0, 0.35); cursor: pointer;">FF 1x</button>
             <button class="icon-btn sm" data-act="recall-btn" id="breaker-float-recall" title="Recall all balls immediately" style="color: #00F2FF; background: rgba(7, 8, 14, 0.9); backdrop-filter: blur(6px); font-weight: 800; border: 1.5px solid rgba(0, 242, 255, 0.6); padding: 5px 12px; border-radius: 20px; font-size: 12px; box-shadow: 0 0 12px rgba(0, 242, 255, 0.35); cursor: pointer;">↩ Recall</button>
           </div>
           <canvas id="breaker-canvas" width="360" height="480" style="touch-action: none; border-radius: 10px; cursor: crosshair;"></canvas>
@@ -115,12 +118,12 @@ export class BreakerController {
         </div>
 
         <div class="dock" style="margin-top: 8px; display: flex; gap: 8px; justify-content: center; align-items: center;">
-          <button class="icon-btn" data-act="speed-btn" id="breaker-speed-btn" title="Toggle Speed (1x, 2x, 3x, 5x)" style="min-width: 68px; font-weight: 700; color: #FFD700; border-color: rgba(255, 215, 0, 0.4); background: rgba(255, 215, 0, 0.08);">⏩ 1x</button>
+          <button class="icon-btn" data-act="speed-btn" id="breaker-speed-btn" title="Toggle Speed (1x, 2x, 3x, 5x)" style="min-width: 68px; font-weight: 700; color: #FFD700; border-color: rgba(255, 215, 0, 0.4); background: rgba(255, 215, 0, 0.08);">FF 1x</button>
           <button class="launch" data-act="action-btn" id="breaker-action-btn" style="flex: 1; max-width: 190px;">Drag to Aim & Fire</button>
           <button class="icon-btn" data-act="recall-btn" id="breaker-recall-btn" title="Recall all balls to floor" style="min-width: 78px; display: none; color: #00F2FF; border-color: rgba(0, 242, 255, 0.4); background: rgba(0, 242, 255, 0.08);">↩ Recall</button>
         </div>
         <div style="text-align: center; font-size: 11px; opacity: 0.65; margin-top: 4px; color: #E0E6ED;">
-          Drag anywhere on board to aim trajectory · Release to fire · Tap ⏩ to speed up
+          Drag anywhere on board to aim trajectory · Release to fire · Tap FF to speed up
         </div>
       </div>
     `;
@@ -341,7 +344,7 @@ export class BreakerController {
   };
 
   private updateSpeedButtons(speed: number): void {
-    const label = speed >= 5 ? "⚡ MAX" : `⏩ ${speed}x`;
+    const label = speed >= 5 ? "MAX" : `${speed}x`;
     const speedBtn = this.container?.querySelector<HTMLButtonElement>("#breaker-speed-btn");
     const floatBtn = this.container?.querySelector<HTMLButtonElement>("#breaker-float-speed");
     if (speedBtn) speedBtn.textContent = label;
@@ -450,7 +453,7 @@ export class BreakerController {
           this.renderer.emitFloatingText(
             this.state.launcherX,
             this.state.launcherY - 24,
-            "⚡ LASER BLAST!",
+            "LASER BLAST!",
             "#FFD700",
           );
           this.renderer.triggerShake(6, 0.22);
@@ -458,7 +461,7 @@ export class BreakerController {
           this.renderer.emitFloatingText(
             this.state.launcherX,
             this.state.launcherY - 24,
-            "💥 BOMB EXPLODED!",
+            "BOMB EXPLODED!",
             "#FF3B30",
           );
           this.renderer.triggerShake(8, 0.28);
@@ -480,6 +483,7 @@ export class BreakerController {
         this.gameOverHandled = true;
         synth.gameover();
         this.checkSaveHighScore();
+        this.onArcadeReport?.({ best: this.state.highScore });
         const go = this.container?.querySelector<HTMLElement>("#breaker-gameover");
         const stats = this.container?.querySelector<HTMLElement>("#breaker-final-stats");
         if (go) go.style.display = "flex";
@@ -505,11 +509,11 @@ export class BreakerController {
       if (highEl) highEl.textContent = this.state.highScore.toString();
       if (statusEl) {
         if (!this.state.launched) {
-          statusEl.textContent = `STREAM: ⚽ ${this.state.totalBalls} BALLS · READY TO AIM`;
+          statusEl.textContent = `STREAM: ${this.state.totalBalls} BALLS · READY TO AIM`;
         } else if (this.state.roundTimeSeconds > 5 && this.state.speedMultiplier === 1) {
-          statusEl.textContent = `AIRBORNE: ${this.state.balls.length} · TAP ⏩ FOR FAST FORWARD!`;
+          statusEl.textContent = `AIRBORNE: ${this.state.balls.length} · TAP FF FOR FAST FORWARD!`;
         } else {
-          statusEl.textContent = `AIRBORNE: ${this.state.balls.length} (⚡ ${this.state.speedMultiplier}x) · RETURNED: ${this.state.ballsReturned}`;
+          statusEl.textContent = `AIRBORNE: ${this.state.balls.length} (${this.state.speedMultiplier}x) · RETURNED: ${this.state.ballsReturned}`;
         }
       }
 

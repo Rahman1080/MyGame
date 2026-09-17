@@ -26,7 +26,9 @@ export default {
       saveSlice,
       (updated) => {
         ctx.updateSave(updated);
-        ctx.report({ score: updated.best });
+      },
+      (saved) => {
+        ctx.report({ score: saved.best, solved: true });
       },
     );
   },

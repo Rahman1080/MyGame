@@ -466,13 +466,13 @@ export class BreakerRenderer {
 
       let label = b.hitsLeft.toString();
       if (b.special === "tnt") {
-        label = `💥${b.hitsLeft}`;
+        label = `B${b.hitsLeft}`;
       } else if (b.special === "laser_cross") {
-        label = `⚡${b.hitsLeft}`;
+        label = `L${b.hitsLeft}`;
       } else if (b.special === "splitter") {
-        label = `✨${b.hitsLeft}`;
+        label = `S${b.hitsLeft}`;
       } else if (b.special === "armor" && (b.armorHits ?? 0) > 0) {
-        label = `🛡️${b.armorHits}`;
+        label = `A${b.armorHits}`;
       }
 
       ctx.strokeText(label, b.x + b.width / 2, b.y + b.height / 2 + 0.5);
@@ -522,7 +522,7 @@ export class BreakerRenderer {
         ctx.font = "bold 10px monospace";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText("⚡", orb.x, orb.y);
+        ctx.fillText("L", orb.x, orb.y);
       } else if (orb.type === "bomb") {
         ctx.fillStyle = "#FF3B30";
         ctx.shadowColor = "#FF3B30";
@@ -539,7 +539,7 @@ export class BreakerRenderer {
         ctx.font = "bold 10px monospace";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText("💥", orb.x, orb.y);
+        ctx.fillText("B", orb.x, orb.y);
       }
 
       ctx.restore();
@@ -609,7 +609,7 @@ export class BreakerRenderer {
       ctx.font = "bold 9px monospace";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      const icon = p.type === "multiball" ? "x3" : p.type === "expand" ? "↔" : "⚡";
+      const icon = p.type === "multiball" ? "x3" : p.type === "expand" ? "<>" : "L";
       ctx.fillText(icon, p.x, p.y);
       ctx.restore();
     }

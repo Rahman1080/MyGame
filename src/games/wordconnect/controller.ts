@@ -30,6 +30,7 @@ export class WordConnectController {
   private saveData: SaveData | null = null;
   private arcadeSave: BasicScoreSave | null = null;
   private onArcadeSave: ((s: BasicScoreSave) => void) | null = null;
+  private onArcadeReport: ((s: BasicScoreSave) => void) | null = null;
   private abortController: AbortController | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -43,11 +44,13 @@ export class WordConnectController {
     onBack: () => void,
     save: BasicScoreSave,
     onSave: (s: BasicScoreSave) => void,
+    onReport?: (s: BasicScoreSave) => void,
   ): void {
     this.container = container;
     this.onBack = onBack;
     this.arcadeSave = save;
     this.onArcadeSave = onSave;
+    this.onArcadeReport = onReport ?? null;
 
     // Decouple level from high score (if save.best was high score > 50, start at level 1)
     const savedLvl =
@@ -89,7 +92,7 @@ export class WordConnectController {
 
     this.container.innerHTML = `
       <div class="shell enter" style="padding-bottom: max(12px, var(--safe-bottom));">
-        <div class="hud">
+        <div class="hud" style="grid-template-columns: 44px 1fr 44px;">
           <button class="icon-btn" data-act="back" aria-label="Back to Arcade">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             <span>Hub</span>
@@ -380,6 +383,10 @@ export class WordConnectController {
     const { w, h } = this.canvasSize();
     this.renderer.triggerVictoryBurst(w, h);
     this.checkSaveHighScore();
+    this.onArcadeReport?.({
+      best: this.state.highScore,
+      level: this.state.level,
+    });
     const modal = this.container?.querySelector<HTMLElement>("#wc-winmodal");
     const stats = this.container?.querySelector<HTMLElement>("#wc-final-stats");
     if (modal) modal.style.display = "flex";

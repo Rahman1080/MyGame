@@ -24,6 +24,7 @@ export class MeowdokuController {
   private saveData: SaveData | null = null;
   private arcadeSave: BasicScoreSave | null = null;
   private onArcadeSave: ((s: BasicScoreSave) => void) | null = null;
+  private onArcadeReport: ((s: BasicScoreSave) => void) | null = null;
   private abortController: AbortController | null = null;
   private resizeObserver: ResizeObserver | null = null;
   private levelSeed = "";
@@ -46,11 +47,13 @@ export class MeowdokuController {
     onBack: () => void,
     save: BasicScoreSave,
     onSave: (s: BasicScoreSave) => void,
+    onReport?: (s: BasicScoreSave) => void,
   ): void {
     this.container = container;
     this.onBack = onBack;
     this.arcadeSave = save;
     this.onArcadeSave = onSave;
+    this.onArcadeReport = onReport ?? null;
 
     // Start at the highest unlocked level. Older saves stored the level in
     // `best`, so fall back to it when `level` is absent.
@@ -101,7 +104,7 @@ export class MeowdokuController {
           </button>
           <div class="center-meta">
             <div class="lvl" style="color: #40c4ff; letter-spacing: 1px;">MEOWDOKU</div>
-            <div class="par">LEVEL <b id="meow-level">${this.engine.level}</b> · <span id="meow-hearts">❤️❤️❤️</span></div>
+            <div class="par">LEVEL <b id="meow-level">${this.engine.level}</b> · <span id="meow-hearts">♥♥♥</span></div>
             <div class="par-sub">1 CAT PER REGION, ROW & COL · NO TOUCHING</div>
           </div>
           <button class="icon-btn" data-act="undo" id="meow-undo-btn" aria-label="Undo">
@@ -116,8 +119,8 @@ export class MeowdokuController {
           <!-- Win Overlay -->
           <div id="meow-win-modal" class="overlay" style="display: none;">
             <div class="win-card">
-              <h2 style="color: #ffd740; font-size: 24px; margin-bottom: 6px;">PURR-FECT! 🐱</h2>
-              <div id="meow-win-stars" style="font-size: 30px; margin: 8px 0;">⭐⭐⭐</div>
+              <h2 style="color: #ffd740; font-size: 24px; margin-bottom: 6px;">PURR-FECT!</h2>
+              <div id="meow-win-stars" style="font-size: 30px; margin: 8px 0;">★★★</div>
               <div class="win-meta" id="meow-win-meta" style="margin-bottom: 16px;">Level Complete!</div>
               <div class="win-actions">
                 <button class="cta-play" data-act="next-level" style="background: #40c4ff; color: #000; font-weight: bold;">Next Level</button>
@@ -129,7 +132,7 @@ export class MeowdokuController {
           <!-- Game Over Overlay -->
           <div id="meow-gameover-modal" class="overlay" style="display: none;">
             <div class="win-card">
-              <h2 style="color: #ff1744; font-size: 22px; margin-bottom: 8px;">OUT OF HEARTS! 💔</h2>
+              <h2 style="color: #ff1744; font-size: 22px; margin-bottom: 8px;">OUT OF HEARTS!</h2>
               <div class="win-meta" style="margin-bottom: 16px;">Try this puzzle again!</div>
               <div class="win-actions">
                 <button class="cta-play" data-act="retry-level">Retry Level</button>
@@ -142,16 +145,16 @@ export class MeowdokuController {
         <!-- Mode Switcher & Tools Dock -->
         <div class="dock" style="display: flex; justify-content: center; gap: 8px; padding: 10px 16px 14px;">
           <button class="dpad-btn" data-act="mode-auto" id="meow-mode-auto" style="flex: 1; max-width: 100px; min-height: 44px; padding: 8px; font-size: 12px; background: rgba(64, 196, 255, 0.25); border: 1px solid #40c4ff; border-radius: 8px; color: #fff;">
-            ⚡ Auto
+            Auto
           </button>
           <button class="dpad-btn" data-act="mode-cat" id="meow-mode-cat" style="flex: 1; max-width: 100px; min-height: 44px; padding: 8px; font-size: 12px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; color: #fff;">
-            🐱 Cat
+            Cat
           </button>
           <button class="dpad-btn" data-act="mode-x" id="meow-mode-x" style="flex: 1; max-width: 100px; min-height: 44px; padding: 8px; font-size: 12px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(255, 255, 255, 0.2); border-radius: 8px; color: #fff;">
-            ❌ Mark X
+            Mark X
           </button>
           <button class="dpad-btn" data-act="hint" id="meow-hint-btn" style="flex: 1; max-width: 90px; min-height: 44px; padding: 8px; font-size: 12px; background: rgba(255, 215, 64, 0.15); border: 1px solid #ffd740; border-radius: 8px; color: #ffd740;">
-            💡 Hint (<span id="meow-hints-count">${this.engine.hintsRemaining}</span>)
+            Hint (<span id="meow-hints-count">${this.engine.hintsRemaining}</span>)
           </button>
         </div>
       </div>
@@ -193,8 +196,8 @@ export class MeowdokuController {
 
     const heartsEl = this.container.querySelector<HTMLElement>("#meow-hearts");
     if (heartsEl) {
-      const full = "❤️".repeat(Math.max(0, this.engine.hearts));
-      const empty = "🖤".repeat(Math.max(0, 3 - this.engine.hearts));
+      const full = "♥".repeat(Math.max(0, this.engine.hearts));
+      const empty = "♡".repeat(Math.max(0, 3 - this.engine.hearts));
       heartsEl.textContent = full + empty;
     }
 
@@ -509,14 +512,15 @@ export class MeowdokuController {
   private checkPhase(): void {
     if (this.engine.phase === "won") {
       synth.success();
-      this.saveProgress();
+      const saved = this.saveProgress();
+      this.onArcadeReport?.(saved);
       const modal = this.container?.querySelector<HTMLElement>("#meow-win-modal");
       const starsEl = this.container?.querySelector<HTMLElement>("#meow-win-stars");
       const metaEl = this.container?.querySelector<HTMLElement>("#meow-win-meta");
 
       if (starsEl) {
         const stars = this.engine.getStars();
-        starsEl.textContent = "⭐".repeat(stars) + "☆".repeat(3 - stars);
+        starsEl.textContent = "★".repeat(stars) + "☆".repeat(3 - stars);
       }
       if (metaEl) {
         metaEl.textContent = `Completed Level ${this.engine.level}!`;
@@ -533,20 +537,23 @@ export class MeowdokuController {
     }
   }
 
-  private saveProgress(): void {
+  private saveProgress(): BasicScoreSave {
     const nextLevel = this.engine.level + 1;
     const levelScore = this.engine.level * 100 + this.engine.getStars() * 50;
+    let result: BasicScoreSave = { best: levelScore, level: nextLevel };
     if (this.arcadeSave && this.onArcadeSave) {
       const best = Math.max(this.arcadeSave.best ?? 0, levelScore);
       const level = Math.max(this.arcadeSave.level ?? 1, nextLevel);
       this.arcadeSave.best = best;
       this.arcadeSave.level = level;
-      this.onArcadeSave({ best, level });
+      result = { best, level };
+      this.onArcadeSave(result);
     } else if (this.saveData && this.onSave) {
       const updated = recordHighScore(this.saveData, "meowdoku", levelScore);
       this.saveData = updated;
       this.onSave(updated);
     }
+    return result;
   }
 
   private startNextLevel(): void {

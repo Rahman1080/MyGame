@@ -27,6 +27,7 @@ export class MatrixController {
   private saveData: SaveData | null = null;
   private arcadeSave: { best: number } | null = null;
   private onArcadeSave: ((s: { best: number }) => void) | null = null;
+  private onArcadeReport: ((s: { best: number }) => void) | null = null;
   private abortController: AbortController | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -40,11 +41,13 @@ export class MatrixController {
     onBack: () => void,
     save: { best: number },
     onSave: (s: { best: number }) => void,
+    onReport?: (s: { best: number }) => void,
   ): void {
     this.container = container;
     this.onBack = onBack;
     this.arcadeSave = save;
     this.onArcadeSave = onSave;
+    this.onArcadeReport = onReport ?? null;
     this.state = createMatrixGame(4, save.best ?? 0);
     this.renderDom();
     this.setupListeners();
@@ -74,7 +77,7 @@ export class MatrixController {
     if (!this.container) return;
     this.container.innerHTML = `
       <div class="shell enter">
-        <div class="hud">
+        <div class="hud" style="grid-template-columns: 44px 1fr 44px;">
           <button class="icon-btn" data-act="back" aria-label="Back to Arcade">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             <span>Hub</span>
@@ -319,6 +322,8 @@ export class MatrixController {
       if (res.reached2048) {
         synth.star();
         this.renderer.triggerShake(10, 0.4);
+        this.checkSaveHighScore();
+        this.onArcadeReport?.({ best: this.state.highScore });
         const go = this.container?.querySelector<HTMLElement>("#matrix-gameover");
         const stats = this.container?.querySelector<HTMLElement>("#matrix-final-stats");
         const title = this.container?.querySelector<HTMLElement>("#matrix-modal-title");
@@ -332,6 +337,7 @@ export class MatrixController {
       if (res.isGameOver) {
         synth.gameover();
         this.checkSaveHighScore();
+        this.onArcadeReport?.({ best: this.state.highScore });
         const go = this.container?.querySelector<HTMLElement>("#matrix-gameover");
         const stats = this.container?.querySelector<HTMLElement>("#matrix-final-stats");
         const title = this.container?.querySelector<HTMLElement>("#matrix-modal-title");

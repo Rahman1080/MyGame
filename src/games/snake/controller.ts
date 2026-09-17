@@ -28,6 +28,7 @@ export class SnakeController {
   private saveData: SaveData | null = null;
   private arcadeSave: { best: number } | null = null;
   private onArcadeSave: ((s: { best: number }) => void) | null = null;
+  private onArcadeReport: ((s: { best: number }) => void) | null = null;
   private abortController: AbortController | null = null;
   private resizeObserver: ResizeObserver | null = null;
 
@@ -41,11 +42,13 @@ export class SnakeController {
     onBack: () => void,
     save: { best: number },
     onSave: (s: { best: number }) => void,
+    onReport?: (s: { best: number }) => void,
   ): void {
     this.container = container;
     this.onBack = onBack;
     this.arcadeSave = save;
     this.onArcadeSave = onSave;
+    this.onArcadeReport = onReport ?? null;
     this.state = createSnakeGame(20, 20, save.best ?? 0, "normal");
     this.renderDom();
     this.setupListeners();
@@ -75,7 +78,7 @@ export class SnakeController {
     if (!this.container) return;
     this.container.innerHTML = `
       <div class="shell enter">
-        <div class="hud">
+        <div class="hud" style="grid-template-columns: 44px 1fr 44px;">
           <button class="icon-btn" data-act="back" aria-label="Back to Arcade">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             <span>Hub</span>
@@ -362,6 +365,7 @@ export class SnakeController {
         synth.star();
         this.renderer.triggerShake(12, 0.5);
         this.checkSaveHighScore();
+        this.onArcadeReport?.({ best: this.state.highScore });
         const go = this.container?.querySelector<HTMLElement>("#snake-gameover");
         const stats = this.container?.querySelector<HTMLElement>("#final-stats");
         const title = this.container?.querySelector<HTMLElement>("#snake-gameover h2");
@@ -372,6 +376,7 @@ export class SnakeController {
         synth.gameover();
         this.renderer.triggerShake(10, 0.35);
         this.checkSaveHighScore();
+        this.onArcadeReport?.({ best: this.state.highScore });
         const go = this.container?.querySelector<HTMLElement>("#snake-gameover");
         const stats = this.container?.querySelector<HTMLElement>("#final-stats");
         const title = this.container?.querySelector<HTMLElement>("#snake-gameover h2");
@@ -387,8 +392,8 @@ export class SnakeController {
       if (scoreEl) scoreEl.textContent = this.state.score.toString();
       if (highEl) highEl.textContent = this.state.highScore.toString();
       if (multEl) {
-        if (this.state.activePowerUp) {
-          multEl.textContent = `⚡ ${this.state.activePowerUp.type.toUpperCase()} (${(this.state.activePowerUp.remainingMs / 1000).toFixed(1)}s)`;
+          if (this.state.activePowerUp) {
+            multEl.textContent = `${this.state.activePowerUp.type.toUpperCase()} (${(this.state.activePowerUp.remainingMs / 1000).toFixed(1)}s)`;
         } else if (this.state.combo > 1) {
           multEl.textContent = `COMBO x${this.state.combo}`;
         } else {
