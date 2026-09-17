@@ -524,11 +524,11 @@ export function createBricksForWave(width: number, wave: number): Brick[] {
 
       let special: SpecialBrickKind = "normal";
       let color = primaryColor;
-      let hits = baseHits + Math.floor(Math.random() * 8);
       let armorHits = 0;
 
       // Deterministic scattering of special bricks
       const seedVal = (wave * 37 + r * 13 + c * 7) % 100;
+      let hits = baseHits + (seedVal % 8);
       if (seedVal < 6) {
         special = "tnt";
         color = BRICK_PALETTE.tnt;
@@ -1282,7 +1282,7 @@ function damageBrick(
 
     if (brick.powerUp) {
       state.powerUps.push({
-        id: Date.now() + Math.random(),
+        id: brick.id * 1000 + state.wave,
         x: brick.x + brick.width / 2,
         y: brick.y + brick.height / 2,
         vy: 140,

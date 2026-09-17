@@ -94,7 +94,7 @@ export class SnakeController {
         </div>
 
         <div style="display: flex; justify-content: center; margin: 2px 0 6px;">
-          <button class="ghost-btn" data-act="speed" id="snake-speed-btn" style="padding: 4px 14px; font-size: 11px; font-weight: 700; border: 1px solid rgba(41,221,244,0.35); border-radius: 14px; background: rgba(11,15,25,0.7); color: #29ddf4; cursor: pointer; letter-spacing: 0.05em;">
+          <button class="ghost-btn" data-act="speed" id="snake-speed-btn" style="min-height: 44px; display: inline-flex; align-items: center; padding: 4px 14px; font-size: 11px; font-weight: 700; border: 1px solid rgba(41,221,244,0.35); border-radius: 14px; background: rgba(11,15,25,0.7); color: #29ddf4; cursor: pointer; letter-spacing: 0.05em;">
             SPEED: ${this.state.speedMode.toUpperCase()}
           </button>
         </div>

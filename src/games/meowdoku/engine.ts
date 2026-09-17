@@ -99,7 +99,7 @@ export class MeowdokuEngine {
 
     const s = seed
       ? hashSeed(seed + '-' + level)
-      : Date.now() ^ (level * 7919);
+      : hashSeed(`meowdoku-${level}`);
     this._rng = mulberry32(s);
     this._generatePuzzle();
   }
